@@ -52,3 +52,17 @@ def test_identity_verification(store):
 
 def test_normalize():
     assert normalize("  Violões   Elétricos ") == "violoes eletricos"
+
+
+def test_search_matches_whole_words_and_numbers(store):
+    _, approximate = store.search_products("gibson sg")
+    assert approximate  # no Gibson SG in the catalog; the Les Paul is not an exact match
+    found, approximate = store.search_products("violão 7 cordas")
+    assert not approximate and found
+    assert all("7 Cordas" in p.name for p in found)
+
+
+def test_conflicting_descriptions_are_not_indexed(store):
+    assert {pid for pid, p in store.products.items() if p.description_conflict} == {135, 137, 139, 140, 142, 144}
+    found, approximate = store.search_products("fender jazz bass")
+    assert approximate  # the "Fender Jazz Bass" text belongs to the Music Man 135's wrong description

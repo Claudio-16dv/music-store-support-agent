@@ -93,3 +93,16 @@ def test_input_errors(toolbox):
 
 def _email(toolbox, order_id):
     return toolbox.store.orders[order_id].customer.email
+
+
+@pytest.mark.parametrize("product_id", [96, 136, 130])  # out of stock, discontinued, coming soon
+def test_search_by_name_finds_unavailable_models(toolbox, product_id):
+    name = toolbox.store.products[product_id].name
+    r = run(toolbox, "search_products", query=name)
+    assert r["products"][0]["id"] == product_id
+    assert "NOT available" in r["note"]
+
+
+def test_conflicting_description_is_omitted(toolbox):
+    r = run(toolbox, "product_details", product_id=135)
+    assert "description" not in r and "data_note" in r

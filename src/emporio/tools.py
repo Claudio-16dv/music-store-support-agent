@@ -255,12 +255,28 @@ class Toolbox:
         found, approximate = self.store.search_products(
             query, category, min_price, max_price, include_unavailable
         )
+        # A customer asking for a specific model that is out of stock, discontinued or
+        # coming soon must hear that, not "we don't have it": look among those too.
+        only_unavailable = False
+        if query and (approximate or not found) and not include_unavailable:
+            unavailable, approx_unavailable = self.store.search_products(
+                query, category, min_price, max_price, include_unavailable=True
+            )
+            if unavailable and not approx_unavailable:
+                found, approximate, only_unavailable = unavailable, False, True
         limit = max(1, min(int(limit or 15), 20))
         result: dict[str, Any] = {
             "total_found": len(found),
             "products": [_product_summary(p) for p in found[:limit]],
         }
-        if approximate:
+        if only_unavailable:
+            result["note"] = (
+                "The requested model exists but is NOT available for purchase. Tell the customer "
+                "the real situation (out_of_stock: temporarily unavailable; discontinued: no longer "
+                "in the catalog; coming_soon: not on sale yet, no date) and use product_details to "
+                "suggest available alternatives."
+            )
+        elif approximate:
             result["note"] = (
                 "No product contains all the terms; these are APPROXIMATE results (they match only "
                 "some of the terms). Do not present them as the requested item. Remember the store "
@@ -280,7 +296,13 @@ class Toolbox:
         if p is None:
             raise ToolError(f"Product {product_id} does not exist in the catalog.")
         result = _product_summary(p)
-        result["description"] = p.description
+        if p.description_conflict:
+            result["data_note"] = (
+                "The catalog description of this product names another brand/model (data error), "
+                "so it is omitted. Describe the product only by its name and specs."
+            )
+        else:
+            result["description"] = p.description
         result["specs"] = p.specs
         guidance = {
             OUT_OF_STOCK: "Temporarily out of stock: say so and suggest the alternatives.",

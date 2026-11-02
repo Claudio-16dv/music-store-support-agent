@@ -48,6 +48,47 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.lower()).strip()
 
 
+# Instrument brands that appear in the catalog's names and descriptions.
+KNOWN_BRANDS = {
+    "crafter", "fender", "giannini", "gibson", "ibanez", "kala", "kalani", "korg", "martin",
+    "music man", "nord", "ohana", "pearl", "prs", "roland", "rozini", "shelby", "tagima",
+    "takamine", "tama", "taylor", "yamaha",
+}
+
+
+def brands_in(text: str) -> set[str]:
+    norm = normalize(text)
+    return {b for b in KNOWN_BRANDS if re.search(rf"\b{re.escape(b)}\b", norm)}
+
+
+def _stem(word: str) -> str:
+    """Very light Portuguese stemming so plural/gender variants match
+    (violões ~ violão, elétrica ~ elétricos, cordas ~ corda)."""
+    if word.endswith("oes"):
+        word = word[:-3] + "ao"
+    elif word.endswith("s") and len(word) > 3 and not word[-2].isdigit():
+        word = word[:-1]
+    if len(word) > 4 and word[-1] in "ao":
+        word = word[:-1]
+    return word
+
+
+def _index_tokens(text: str) -> set[str]:
+    norm = normalize(text)
+    tokens = {_stem(w) for w in re.findall(r"[a-z0-9]+", norm)}
+    # Hyphenated model codes also match glued: "GD-20" ~ "gd20", "CE-15" ~ "ce15".
+    for chunk in norm.split():
+        glued = re.sub(r"[^a-z0-9]", "", chunk)
+        if glued:
+            tokens.add(glued)
+    return tokens
+
+
+def _term_matches(term: str, tokens: frozenset[str]) -> bool:
+    # Whole-word match; longer terms may also match as a prefix ("strato" -> stratocaster).
+    return term in tokens or (len(term) >= 5 and any(t.startswith(term) for t in tokens))
+
+
 def only_digits(text: str) -> str:
     return re.sub(r"\D", "", text or "")
 
@@ -86,7 +127,10 @@ class Product:
     specs: dict
     created_at: str
     active_promotion: Promotion | None = None
-    _search_text: str = field(default="", repr=False)
+    # True when the description names another brand than the product name
+    # (catalog data error, e.g. id 135); such descriptions are not trusted.
+    description_conflict: bool = False
+    _tokens: frozenset[str] = field(default=frozenset(), repr=False)
 
     @property
     def availability(self) -> str:
@@ -181,10 +225,13 @@ class StoreData:
                 specs=_parse_specs(r["specs"]),
                 created_at=r["created_at"],
             )
-            p._search_text = normalize(
-                " ".join([p.name, p.category.name, p.description, *map(str, p.specs.values())])
-            )
+            p.description_conflict = bool(brands_in(p.description) - brands_in(p.name))
+            indexed = [p.name, p.category.name, *map(str, p.specs.values())]
+            if not p.description_conflict:
+                indexed.append(p.description)
+            p._tokens = frozenset(_index_tokens(" ".join(indexed)))
             self.products[p.id] = p
+        self._vocabulary = frozenset().union(*(p._tokens for p in self.products.values()))
 
         self.promotions = [
             Promotion(
@@ -252,9 +299,9 @@ class StoreData:
     ) -> tuple[list[Product], bool]:
         """Text search + filters. Price filters use the final (promotional) price.
 
-        Every term must appear in the product; if nothing matches, it tries
-        gluing the terms together ("takamine gd 20" -> GD20) and finally falls
-        back to partial matching. Returns (products, approximate) —
+        Every query term must match a whole word of the product (split model
+        codes are glued first: "takamine gd 20" -> GD20); if nothing matches,
+        it falls back to partial matching. Returns (products, approximate) —
         approximate=True means not all terms were found.
         """
         candidates = list(self.products.values())
@@ -268,25 +315,35 @@ class StoreData:
         if max_price is not None:
             candidates = [p for p in candidates if p.final_price <= max_price]
 
-        terms = [t for t in normalize(query).split() if len(t) > 1 and t not in STOPWORDS]
+        terms = self._query_terms(query)
         if not terms:
             return sorted(candidates, key=lambda p: p.final_price), False
 
         def score(p: Product) -> int:
-            compact = p._search_text.replace(" ", "").replace("-", "")
-            return sum(1 for t in terms if t in p._search_text or t.replace("-", "") in compact)
+            return sum(1 for t in terms if _term_matches(t, p._tokens))
 
         exact = [p for p in candidates if score(p) == len(terms)]
         if exact:
             return sorted(exact, key=lambda p: p.final_price), False
-        # Glue neighbouring terms ("gd 20" -> "gd20") before falling back to partial matching.
-        joined = "".join(terms)
-        glued = [p for p in candidates if joined in p._search_text.replace(" ", "").replace("-", "")]
-        if glued:
-            return sorted(glued, key=lambda p: p.final_price), False
         partial = [(score(p), p) for p in candidates if score(p) > 0]
         partial.sort(key=lambda sp: (-sp[0], sp[1].final_price))
         return [p for _, p in partial], True
+
+    def _query_terms(self, query: str) -> list[str]:
+        words = [
+            w for w in re.findall(r"[a-z0-9]+", normalize(query))
+            if w not in STOPWORDS and (len(w) > 1 or w.isdigit())
+        ]
+        terms, i = [], 0
+        while i < len(words):
+            # Glue split model codes ("gd 20" -> "gd20") when the glued form exists in the catalog.
+            if i + 1 < len(words) and words[i] + words[i + 1] in self._vocabulary:
+                terms.append(words[i] + words[i + 1])
+                i += 2
+            else:
+                terms.append(_stem(words[i]))
+                i += 1
+        return terms
 
     def similar_available(self, product: Product, limit: int = 3) -> list[Product]:
         """Available alternatives from the same category, closest in price."""
