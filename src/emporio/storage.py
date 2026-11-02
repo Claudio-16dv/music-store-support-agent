@@ -52,11 +52,9 @@ def visible_turns(messages: list[dict]) -> list[tuple[str, str]]:
     """Extrai só as falas (cliente/Lia) do histórico, para reexibir ao retomar."""
     turns = []
     for m in messages:
-        content = m["content"]
-        if m["role"] == "user" and isinstance(content, str):
+        content = m.get("content") or ""
+        if m["role"] == "user":
             turns.append(("cliente", content))
-        elif m["role"] == "assistant":
-            text = "\n".join(b.get("text", "") for b in content if b.get("type") == "text").strip()
-            if text:
-                turns.append(("lia", text))
+        elif m["role"] == "assistant" and not m.get("tool_calls") and content.strip():
+            turns.append(("lia", content.strip()))
     return turns

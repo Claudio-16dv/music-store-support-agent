@@ -17,13 +17,11 @@ RUNTIME_DIR = Path(os.getenv("EMPORIO_RUNTIME_DIR", ROOT_DIR / ".runtime"))
 SESSIONS_DIR = RUNTIME_DIR / "sessoes"
 TICKETS_FILE = RUNTIME_DIR / "chamados.jsonl"
 
-MODEL = os.getenv("EMPORIO_MODEL", "claude-opus-5-5")
-# Atendimento é conversa curta + consultas simples: "low" já resolve bem e
-# reduz latência/custo. Suba para "medium"/"high" se notar raciocínio raso.
-EFFORT = os.getenv("EMPORIO_EFFORT", "low")
-MAX_TOKENS = int(os.getenv("EMPORIO_MAX_TOKENS", "8000"))
-# Fallback server-side em caso de recusa do classificador de segurança.
-USE_FALLBACK = os.getenv("EMPORIO_FALLBACK", "1") == "1"
+MODEL = os.getenv("EMPORIO_MODEL", "gpt-4.1-mini")
+# Só para modelos de raciocínio (ex.: família gpt-5/o-series): low | medium | high.
+# Vazio = não envia o parâmetro (modelos como gpt-4.1 não o aceitam).
+REASONING_EFFORT = os.getenv("EMPORIO_REASONING_EFFORT", "")
+MAX_TOKENS = int(os.getenv("EMPORIO_MAX_TOKENS", "2000"))
 # Limite de chamadas de ferramenta por mensagem do cliente (proteção contra loop).
 MAX_TOOL_ROUNDS = int(os.getenv("EMPORIO_MAX_TOOL_ROUNDS", "8"))
 

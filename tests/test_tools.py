@@ -14,7 +14,7 @@ def test_schemas_validos(toolbox):
     names = {s["name"] for s in toolbox.schemas}
     assert names == set(toolbox._handlers)
     for s in toolbox.schemas:
-        assert s["input_schema"]["type"] == "object"
+        assert s["parameters"]["type"] == "object"
 
 
 def test_buscar_violoes_ate_1000(toolbox):

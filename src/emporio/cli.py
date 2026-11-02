@@ -13,7 +13,7 @@ import json
 import logging
 import sys
 
-import anthropic
+import openai
 
 from . import config, storage
 from .agent import AgentReply, EmporioAgent
@@ -74,16 +74,16 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             reply = agent.send(user_text)
-        except anthropic.AuthenticationError:
-            print("Erro: chave da API inválida ou ausente. Configure ANTHROPIC_API_KEY no .env.")
+        except openai.AuthenticationError:
+            print("Erro: chave da API inválida ou ausente. Configure OPENAI_API_KEY no .env.")
             return 1
-        except anthropic.RateLimitError:
+        except openai.RateLimitError:
             print(f"{DIM}Muitas requisições agora; aguarde alguns segundos e tente de novo.{RESET}\n")
             continue
-        except anthropic.APIConnectionError:
+        except openai.APIConnectionError:
             print(f"{DIM}Sem conexão com a API. Verifique a internet e tente de novo.{RESET}\n")
             continue
-        except anthropic.APIStatusError as e:
+        except openai.APIStatusError as e:
             print(f"{DIM}Erro da API ({e.status_code}): {e.message}{RESET}\n")
             continue
         storage.save(session_id, agent.messages)

@@ -95,7 +95,7 @@ class Toolbox:
                     "específico que pode estar esgotado/descontinuado, use incluir_indisponiveis=true. "
                     "Filtros de preço consideram o preço final (já com promoção, sem desconto PIX)."
                 ),
-                "input_schema": {
+                "parameters": {
                     "type": "object",
                     "properties": {
                         "termo": {
@@ -117,7 +117,7 @@ class Toolbox:
                     "Ficha completa de um produto pelo id (descrição, especificações técnicas, preço, "
                     "promoção, estoque) e, se não estiver disponível, alternativas parecidas em estoque."
                 ),
-                "input_schema": {
+                "parameters": {
                     "type": "object",
                     "properties": {"produto_id": {"type": "integer"}},
                     "required": ["produto_id"],
@@ -130,7 +130,7 @@ class Toolbox:
                     "Lista as promoções vigentes agora, com preço original, desconto e preço promocional. "
                     "Use também para checar se uma promoção que o cliente citou ainda vale."
                 ),
-                "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
             },
             {
                 "name": "consultar_pedido",
@@ -139,7 +139,7 @@ class Toolbox:
                     "de um pedido. Exige o número do pedido E o e-mail ou telefone cadastrado do "
                     "cliente (verificação de identidade — LGPD). Peça os dois ao cliente antes de chamar."
                 ),
-                "input_schema": {
+                "parameters": {
                     "type": "object",
                     "properties": {
                         "numero_pedido": {"type": "integer"},
@@ -160,7 +160,7 @@ class Toolbox:
                     "parcelamento, trocas e devoluções, frete e prazos, regras de promoção, garantia "
                     "ou privacidade de dados. Pode pedir vários tópicos de uma vez."
                 ),
-                "input_schema": {
+                "parameters": {
                     "type": "object",
                     "properties": {
                         "topicos": {
@@ -181,7 +181,7 @@ class Toolbox:
                     "parcelamento sem juros respeitando as parcelas mínimas e se é possível combinar "
                     "formas de pagamento. Use em vez de fazer as contas de cabeça."
                 ),
-                "input_schema": {
+                "parameters": {
                     "type": "object",
                     "properties": {
                         "valor": {"type": "number", "description": "Valor total da compra em reais."},
@@ -202,7 +202,7 @@ class Toolbox:
                     "pede para falar com um atendente. Confirme o resumo e um contato com o cliente "
                     "antes de registrar. Retorna o número de protocolo."
                 ),
-                "input_schema": {
+                "parameters": {
                     "type": "object",
                     "properties": {
                         "tipo": {

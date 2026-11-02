@@ -71,7 +71,7 @@ def render(name: str, description: str, turns: list[tuple[str, object]]) -> str:
         f"> {description}",
         ">",
         f"> Gerado automaticamente por `scripts/gerar_exemplos.py` em {now:%d/%m/%Y %H:%M} "
-        f"(horário de Campo Grande) com o modelo `{config.MODEL}` (effort `{config.EFFORT}`).",
+        f"(horário de Campo Grande) com o modelo `{config.MODEL}` (OpenAI).",
         "",
     ]
     for user_text, reply in turns:

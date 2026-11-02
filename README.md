@@ -3,7 +3,7 @@
 Protótipo de agente de atendimento por mensagens de texto para a **Empório da Música**, loja fictícia de instrumentos musicais em Campo Grande/MS. O agente (a **Lia**) responde clientes sobre catálogo, preços, promoções, status de pedidos e políticas da loja, decidindo sozinho quando consultar **dados** (CSVs) e quando consultar **políticas** (PDF).
 
 ```
-Cliente ──► CLI ──► EmporioAgent (loop de function calling) ──► Claude API
+Cliente ──► CLI ──► EmporioAgent (loop de function calling) ──► OpenAI API
                          │                                    ▲
                          ▼                                    │ tool_result
                     Toolbox (7 ferramentas) ──────────────────┘
@@ -16,13 +16,13 @@ Cliente ──► CLI ──► EmporioAgent (loop de function calling) ──�
 
 ## Como rodar
 
-Pré-requisitos: Python 3.11+ e uma chave da API da Anthropic.
+Pré-requisitos: Python 3.11+ e uma chave da API da OpenAI.
 
 ```bash
 git clone <url-do-repositorio> && cd emporio-agente
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env        # e preencha ANTHROPIC_API_KEY
+cp .env.example .env        # e preencha OPENAI_API_KEY
 ```
 
 Conversar com o agente:
@@ -38,11 +38,11 @@ Dentro do chat: `/debug` liga/desliga o modo debug, `/nova` inicia outra convers
 Outros comandos:
 
 ```bash
-pytest                              # 31 testes, não chamam a API
+pytest                              # 33 testes, não chamam a API
 python scripts/gerar_exemplos.py    # regenera as conversas em exemplos/ (chama a API)
 ```
 
-Configuração opcional no `.env`: `EMPORIO_MODEL` (padrão `claude-opus-5-5`), `EMPORIO_EFFORT` (`low` por padrão), `EMPORIO_FALLBACK` (`1`/`0`).
+Configuração opcional no `.env`: `EMPORIO_MODEL` (padrão `gpt-4.1-mini`) e `EMPORIO_REASONING_EFFORT` (`low`/`medium`/`high`, só para modelos de raciocínio).
 
 ## Estrutura
 
@@ -67,7 +67,7 @@ O agente é um loop de *tool use*: o modelo recebe a mensagem, decide quais ferr
 - **Agente de SQL (texto→SQL):** flexível, mas abre espaço para consultas erradas e para **vazamento de dados de clientes** (um `SELECT * FROM customers` resolve qualquer coisa). Com ferramentas fechadas, a regra de LGPD fica no código: `consultar_pedido` só devolve dados se número do pedido **e** e-mail/telefone baterem.
 - **Contas no código, não no modelo:** PIX, parcelas mínimas por faixa, prazos de arrependimento, troca e garantia são calculados em Python (`simular_pagamento`, `consultar_pedido`). O modelo explica; quem calcula é o código.
 
-Usei um **loop manual** em vez do *tool runner* (beta) do SDK para controlar o limite de rodadas, registrar as chamadas (modo debug e exemplos), tratar cada `stop_reason` e desfazer o turno se a API falhar, para o histórico salvo nunca ficar inconsistente.
+Usei um **loop manual** sobre a Chat Completions API (em vez de um framework como LangChain) para controlar o limite de rodadas, registrar as chamadas (modo debug e exemplos), tratar cada `stop_reason` tratar argumentos JSON inválidos e desfazer o turno se a API falhar, para o histórico salvo nunca ficar inconsistente.
 
 ### Recuperação das políticas: por seção, sem banco vetorial
 
@@ -77,13 +77,15 @@ Para um documento desse tamanho isso é **mais preciso** (o texto volta inteiro,
 
 Também avaliei pôr o manual inteiro no prompt de sistema (cerca de 3 mil tokens, barato com cache). Fiquei com a ferramenta porque o desafio pede que o agente *saiba quando* consultar as políticas, e porque isso mantém o prompt focado em comportamento e escala melhor.
 
-### Modelo e provedor: Claude Opus 5.5 (Anthropic API)
+### Modelo e provedor: OpenAI (`gpt-4.1-mini` por padrão)
 
-- Bom em **tool use em português** e em seguir regras de negócio longas sem se perder (persona + LGPD + escopo + promoções).
-- **`effort: low`**: atendimento é conversa curta com consultas simples, então esforço baixo reduz latência e custo. É configurável por `EMPORIO_EFFORT` caso alguma interação peça mais raciocínio.
-- **Cache de prompt** automático: ferramentas + prompt de sistema + histórico ficam em cache entre turnos. Por isso o prompt de sistema é estático, e a **data/hora atual** entra a cada turno como *mensagem de sistema no meio da conversa*, sem invalidar o cache. A hora é necessária para horário de funcionamento e prazos.
-- **Fallback server-side** (`fallbacks: "default"`): se o classificador de segurança recusar uma mensagem, a API refaz a resposta em um modelo de fallback em vez de deixar o cliente sem resposta. Pode ser desligado com `EMPORIO_FALLBACK=0`.
-- O modelo é configurável (`EMPORIO_MODEL`). Com um modelo que não aceite mensagens de sistema no meio da conversa, seria preciso mover a nota de hora para outro lugar.
+- **Provedor:** API da OpenAI, via SDK oficial `openai` e Chat Completions com *function calling*. A escolha foi prática: é onde tenho créditos.
+- **Modelo padrão `gpt-4.1-mini`:**
+  - segue bem instruções longas e chama ferramentas de forma confiável;
+  - responde rápido e custa pouco, o que importa num atendimento com várias mensagens curtas.
+- **Configurável:** dá para trocar por `EMPORIO_MODEL`. Com um modelo de raciocínio (ex.: `gpt-5-mini`), defina `EMPORIO_REASONING_EFFORT`. O código envia `reasoning_effort` só nesse caso; nos outros envia `temperature=0.3`, para respostas consistentes.
+- **Cache de prompt:** a OpenAI faz cache automático de prefixos repetidos. Por isso o prompt de sistema é estático e vem primeiro. A **data/hora atual** entra a cada turno como uma mensagem de sistema junto da mensagem do cliente, sem alterar o prefixo. A hora é necessária para horário de funcionamento e prazos.
+- **Independência de provedor:** a lógica de negócio (dados, políticas, ferramentas, prompt) não depende do provedor. Só `agent.py` conversa com a API, então trocar de provedor é reescrever esse arquivo. Fiz isso na prática: o projeto começou com a API da Anthropic e migrou para a OpenAI (ver histórico de commits).
 
 ### Estratégia de prompt
 
@@ -99,7 +101,7 @@ As descrições das ferramentas reforçam o "quando usar". Os resultados trazem 
 ### Interface e persistência
 
 - **CLI**: o foco do desafio é o agente. O `EmporioAgent.send()` é independente da interface, então uma API (FastAPI) ou um webhook de WhatsApp seria uma camada fina por cima.
-- **Histórico persistido** em JSON por sessão (`.runtime/sessoes/`). O cliente pode retomar a conversa (`--sessao`), e o histórico é salvo exatamente como foi enviado à API, só com acréscimos, o que preserva o cache.
+- **Histórico persistido** em JSON por sessão (`.runtime/sessoes/`). O cliente pode retomar a conversa (`--sessao`), e o histórico é salvo exatamente no formato enviado à API.
 - **Chamados** (reclamações, trocas, atrasos) vão para `.runtime/chamados.jsonl` com número de protocolo. É o ponto de integração com a equipe humana.
 
 ### Tratamento dos dados
