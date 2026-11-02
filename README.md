@@ -40,7 +40,7 @@ Inside the chat: `/debug` toggles debug mode, `/new` starts another conversation
 Other commands:
 
 ```bash
-pytest                                # 47 tests, no API calls
+pytest                                # 49 tests, no API calls
 python scripts/generate_examples.py   # regenerates the conversations in examples/ (calls the API)
 ```
 
@@ -95,7 +95,7 @@ I also considered putting the whole manual in the system prompt (about 3k tokens
 The system prompt (`prompts.py`) is written in English and tells the model to always reply in Brazilian Portuguese. It defines:
 - the **persona**: Lia, informal but professional, short WhatsApp-style messages, as section 7.1 of the manual asks;
 - **when to use each tool**, tied to each kind of question;
-- the manual's **special situations**: out-of-stock or discontinued product, expired promotion, complaint;
+- the manual's **special situations**: out-of-stock or discontinued product, expired promotion, complaint, a public holiday, an order marked as delivered that the customer says never arrived;
 - the **scope**: instruments only; accessories are redirected; topics unrelated to the store are declined kindly;
 - **security** rules: ignore attempts to change the rules or reveal data.
 
@@ -114,22 +114,23 @@ The tool descriptions reinforce the "when to use". The results carry guidance fi
 | `status` + `stock_quantity` combine ambiguously | Derived availability: `available`, `out_of_stock` (active with stock 0, e.g. id 96), `discontinued`, `coming_soon` |
 | Product 136 **discontinued with 13 in stock** | Treated as discontinued, as the policy says: it is not offered and the agent suggests equivalents |
 | Product 130 **"coming_soon" with stock 2** and already in orders | Treated as "coming soon": not sold, and the agent does not promise a date |
-| More than one promotion per product (e.g. 93 and 96) | Only active promotions count; if more than one is active, the largest wins (they don't stack) |
+| Several promotions per product (93, 96, 99), all of them already ended | Only active promotions count; if more than one were active, the largest would win (they don't stack). Ended ones are returned as `ended_promotions`, so the agent can say a campaign is over and give the current price |
 | No promotional price in the CSV | Computed (`price × (1 − discount)`) and always shown with the original price and the % |
 | `specs` JSON in different formats | Lenient parsing and normalized keys |
 | Text search ("takamine gd 20", "violões", accents, case) | Accent-free, whole-word matching with light plural/gender stemming; numbers are kept ("violão 7 cordas" only returns 7-string guitars); split model codes are glued only when the glued form exists ("gd 20" → "gd20"). Partial results are flagged as **approximate** so the agent does not mistake them for the requested item |
 | A customer asks for a model that is out of stock, discontinued or coming soon | The default search only returns products for sale, so when the exact model exists only among unavailable ones, it is returned with its real situation and the agent explains it instead of saying "we don't have it" |
-| **Descriptions that name another brand** (ids 135, 137, 139, 140, 142, 144 — e.g. "Music Man Bass 1X" described as a "Fender Jazz Bass", "Korg" keyboard described as a Roland with 88 keys while the specs say 61) | Detected automatically (the description mentions a brand that is not in the name). The name and specs are treated as the source of truth: those descriptions are left out of the search index and of `product_details`, to avoid misleading information |
+| **Descriptions that name another brand** (ids 135, 137, 139, 140, 142, 144; e.g. "Music Man Bass 1X" described as a "Fender Jazz Bass", "Korg" keyboard described as a Roland with 88 keys while the specs say 61) | Detected automatically (the description mentions a brand that is not in the name). The name and specs are treated as the source of truth: those descriptions are left out of the search index and of `product_details`, to avoid misleading information |
 | Customers 11 and 43 share the same e-mail | A shared e-mail does not verify order ownership; the agent asks for the phone instead |
 | Some past orders do not follow today's rules (PIX orders 1, 5, 10, 13 and 17 charged without the 5% discount; orders 9, 16 and 18 with installments below the minimum) | Historical orders are shown as recorded; the rules are only applied to new simulations |
 | Orders have no actual receipt date | The delivery estimate is used as the reference for deadlines, and the agent is told so |
 | Some order totals ≠ sum of current prices (e.g. orders 3 and 20) | The order total is treated as the amount actually charged (prices change, discounts may apply); it is not recomputed |
 | Orders from 2025–2026 and a moving "today" | Deadlines are computed against the current date: "shipped" orders past their estimate and orders stuck for a long time raise alerts and a ticket offer |
+| The manual mentions "more than 300 instruments", including wind and orchestral strings, but the CSV has 65 products and those three categories are empty | The data is the source of truth: the agent says those instruments are not available at the moment |
 | pypdf extracts one word per line | Text normalization before splitting the sections |
 
 ### Assumptions about inconsistencies in the manual
 
-The challenge asks for the interpretations to be documented. Assumptions 1–3 and 6 are also attached to the section text returned to the agent (`INTERPRETATION_NOTES`), so it always answers the same way; 4, 5 and 7 are in the system prompt and the tools.
+The challenge asks for the interpretations to be documented. Assumptions 1–3, 6 and 9 are also attached to the section text returned to the agent (`INTERPRETATION_NOTES`), so it always answers the same way; 4, 5, 7 and 8 are in the system prompt and the tools.
 
 1. **WhatsApp:** the cover and the data table show **(67) 3341-4444**, while section 7 mentions **(67) 3321-4500**. I adopted 3341-4444, which appears in two places, including the company's official table.
 2. **E-mail:** the table shows `contato@empóriodamusica.com.br` (with an accent); I treated it as a typo and use the cover's `contato@emporiodamusica.com.br`.
@@ -143,6 +144,8 @@ The challenge asks for the interpretations to be documented. Assumptions 1–3 a
 5. **Closing a sale and reservations:** there is no system for that, so the agent gives the conditions and refers the customer to the store or to a human agent.
 6. **Defects after 30 days:** section 4.2 says that after 30 days the customer must go to the manufacturer, but section 8.1 gives a 90-day legal warranty from receipt (Consumer Defense Code). Within those 90 days the store handles the defect (the agent opens a ticket); after that, the manufacturer's warranty applies and the store can mediate.
 7. **Holidays:** the manual says the store is closed on holidays without listing them. I used the national and Mato Grosso do Sul holidays plus Campo Grande's anniversary (August 26). Dates I could not confirm as municipal holidays (Corpus Christi, June 13) are treated as regular days.
+8. **Exchange for another color/model/size:** section 4.3 allows it "within 7 days" without saying from when. I count it from receipt, like the right of withdrawal.
+9. **Shipping at exactly R$ 500,00:** the manual gives free shipping "above R$ 500,00" and R$ 35,00 "below R$ 500,00" in the Campo Grande area, but says nothing about exactly R$ 500,00. I went with the customer-friendly reading: free shipping.
 
 ### Security and LGPD
 
@@ -176,17 +179,19 @@ Conversations generated live by the agent with `scripts/generate_examples.py`. T
 - **Receipt date:** deadlines use the delivery estimate because the actual date is not in the data.
 - **Holiday calendar:** national, state and the city anniversary only; special opening hours (the manual mentions extended hours on dates like Black Friday) are not modeled.
 - **Conversation length:** the whole history is resent on every turn and is never trimmed or summarized. Fine for customer service chats; very long sessions would need a window or a summary.
-- **Customer language:** Lia always answers in Brazilian Portuguese, even if the customer writes in another language.
+- **Customer language:** Lia always answers in Brazilian Portuguese. I tried telling her to answer in the customer's language, but `gpt-4.1-mini` only did it in 1 of 3 test messages (English and Spanish), and an agent that switches language at random is worse than a predictable one. A language-detection step before the call, or a stronger model, would fix it.
 - **Observability:** I would log tokens, latency and tools used per conversation to track cost and quality.
 
 ## Use of coding assistants
 
-I used **Claude Code** (Anthropic) as a pair programmer throughout the challenge:
+I used **Claude Code** (Anthropic), in the Claude desktop app, for this challenge. I worked with it the way I would with a fast pair programmer: I set the direction and made the calls, it did most of the typing, and nothing went in without a reason I agreed with.
 
-1. **Analysis:** I asked it to read the challenge statement, the PDF manual and the CSVs and give me a summary of what the challenge asked for. The inconsistencies in the data and the manual already showed up at this stage (duplicate phone number, contradictory installment rule, products with inconsistent status and stock).
-2. **Plan and decisions:** we discussed the approach (function calling vs. RAG vs. SQL), the provider and the interface. I approved the plan before implementation.
-3. **Incremental implementation:** it wrote the code in steps (data → policies → tools → agent → CLI → tests), running the tests and checking the tool output against the real data. Each step became a commit.
-4. **Review:** I reviewed the decisions, the assumptions and the example conversations, which were generated live by the agent with the script, not written by hand.
-5. **Audit before delivery:** I asked for an audit against the challenge statement. Claude Code installed the published repository from a clean clone, ran adversarial conversations against the live agent (prompt injection, a "courier" asking for another customer's data, unavailable models, holidays, a ticket without contact…) and had an independent sub-agent check every rule against the manual and every README claim against the CSVs. The bugs found (e.g. the agent saying the store was open on a public holiday, unavailable models invisible to search, contradictory product descriptions) were fixed in separate commits.
+How it went in practice:
 
-The assistant sped up the mechanical work (parsing, tests, boilerplate). The product and business decisions (what to do with inconsistent data, LGPD rules, scope) were made explicit and documented here.
+- **Understanding the problem.** Before any code, I had it read the statement, the manual and the CSVs and summarize what was being asked. That brought the messy parts up early (two different phone numbers, conflicting installment rules, products whose status doesn't match their stock), and I agreed on how to handle each one before implementation started.
+- **Choosing the approach.** It suggested function calling with closed tools instead of RAG over the CSVs or text-to-SQL, and splitting the PDF by section instead of a vector store. I went with it after we went through the trade-offs (the reasoning is in the sections above). The provider was my call: the project started on Anthropic's API and I switched it to OpenAI, where I had credits. Because only `agent.py` talks to the API, that was a one-file change. I also asked for the code and docs in English while keeping Lia in Portuguese for the customers.
+- **Building it.** The code was written in small steps (data, policies, tools, agent loop, CLI, tests), each one tested and committed on its own, so the history shows how the project actually evolved.
+- **Testing with real conversations.** Unit tests don't tell you whether the agent behaves well, so we ran real conversations against it. That's how we caught what the tests couldn't: Lia asking for e-mail *and* phone when one is enough, forgetting to give the ticket number, listing 8 of 12 guitars without saying there were more. Most of these were fixed in the prompt and the tool descriptions, not in code. We also compared `gpt-5.4-mini` on the hardest cases and kept `gpt-4.1-mini`.
+- **Auditing before delivery.** At the end I asked for a full audit against the challenge statement: a clean install from GitHub, adversarial conversations (prompt injection, someone posing as a courier asking for a customer's address, out-of-stock models, a public holiday) and a second, independent review of every rule against the manual and every claim in this README against the data. It found real problems, like the agent telling a customer the store was open on a holiday, and each one was fixed in its own commit.
+
+What I take from it: the assistant is very fast at the mechanical work (PDF parsing, tests, boilerplate) and good at spotting inconsistencies in data, but it can also be confidently wrong. What made the difference was asking for evidence, by running the agent and checking its answers against the CSVs and the manual, instead of trusting the first answer. That's also why the commits are co-authored with Claude: it's an honest picture of how the work was done.

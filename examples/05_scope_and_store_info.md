@@ -2,21 +2,21 @@
 
 > Out-of-scope requests (accessories and an unrelated topic), an expired promotion and store details.
 >
-> Generated automatically by `scripts/generate_examples.py` on 2026-11-02 14:48 (Campo Grande time) with the `gpt-4.1-mini` model (OpenAI). The conversation is in Portuguese, as with the store's real customers.
+> Generated automatically by `scripts/generate_examples.py` on 2026-11-02 15:13 (Campo Grande time) with the `gpt-4.1-mini` model (OpenAI). The conversation is in Portuguese, as with the store's real customers.
 
 **Customer:** Vocês vendem cordas e pedal de distorção?
 
 **Lia:** Oi! Aqui é a Lia, da Empório da Música 🎸  
   
-A gente vende só instrumentos musicais, não trabalhamos com acessórios como cordas ou pedais de distorção. Para esses itens, recomendo procurar lojas especializadas em acessórios musicais.  
+A gente vende só instrumentos musicais, não trabalhamos com acessórios como cordas ou pedais de distorção. Para esses itens, recomendo procurar uma loja especializada em acessórios musicais.  
   
-Posso ajudar você a encontrar algum instrumento ou tirar dúvidas sobre eles?
+Posso ajudar a encontrar algum instrumento para você?
 
 ---
 
 **Customer:** Beleza. Aproveitando, me ajuda a escrever uma redação sobre a Revolução Francesa?
 
-**Lia:** Sobre redação de história, não sou a melhor para ajudar, mas posso sugerir que você busque fontes confiáveis na internet ou livros escolares para montar seu texto. Se quiser, posso voltar a ajudar com música ou instrumentos, beleza?
+**Lia:** Sobre redação, não sou a melhor para ajudar, pois aqui é o Empório da Música e meu foco é música e instrumentos. Mas posso ajudar com dicas musicais ou instrumentos, se quiser! Quer dar uma olhada em algum violão, guitarra ou outro instrumento?
 
 ---
 
@@ -27,12 +27,12 @@ Posso ajudar você a encontrar algum instrumento ou tirar dúvidas sobre eles?
 - `search_products({"query": "Crafter CE-15"})`
 
   ```json
-  {"total_found": 1, "products": [{"id": 102, "name": "Crafter CE-15 Elétrico Nylon Natural", "category": "Violões", "availability": "available", "price": "R$ 3.899,00", "stock": 2}]}
+  {"total_found": 1, "products": [{"id": 102, "name": "Crafter CE-15 Elétrico Nylon Natural", "category": "Violões", "availability": "available", "price": "R$ 3.899,00", "stock": 2, "ended_promotions": ["Black Friday"]}]}
   ```
 
 </details>
 
-**Lia:** O Crafter CE-15 Elétrico Nylon Natural está disponível, mas não está com desconto no momento, o preço é R$ 3.899,00. Quer que eu te mostre outras opções de violões elétricos com nylon?
+**Lia:** O Crafter CE-15 Elétrico Nylon Natural está disponível, mas a promoção da Black Friday já acabou. O preço atual é R$ 3.899,00. Quer que eu te ajude a ver outras opções de violões elétricos com nylon?
 
 ---
 
@@ -48,8 +48,6 @@ Posso ajudar você a encontrar algum instrumento ou tirar dúvidas sobre eles?
 
 </details>
 
-**Lia:** O endereço da Empório da Música é Rua 14 de Maio, 3200 — Centro, Campo Grande - MS.   
-  
-No sábado, a loja abre das 9h às 13h. Hoje, por ser feriado, estamos fechados. Posso ajudar com mais alguma coisa?
+**Lia:** A loja Empório da Música fica na Rua 14 de Maio, 3200 — Centro, Campo Grande - MS. No sábado, o horário de funcionamento é das 9h às 13h. Hoje, por ser feriado, a loja está fechada. Quer saber mais alguma coisa?
 
 ---
