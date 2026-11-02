@@ -106,7 +106,7 @@ class Toolbox:
                         "preco_min": {"type": "number", "description": "Preço mínimo em reais."},
                         "preco_max": {"type": "number", "description": "Preço máximo em reais."},
                         "incluir_indisponiveis": {"type": "boolean"},
-                        "limite": {"type": "integer", "description": "Máximo de itens (padrão 8)."},
+                        "limite": {"type": "integer", "description": "Máximo de itens (padrão 15)."},
                     },
                     "additionalProperties": False,
                 },
@@ -136,8 +136,10 @@ class Toolbox:
                 "name": "consultar_pedido",
                 "description": (
                     "Consulta status, itens, rastreio, previsão de entrega e prazos de troca/devolução "
-                    "de um pedido. Exige o número do pedido E o e-mail ou telefone cadastrado do "
-                    "cliente (verificação de identidade — LGPD). Peça os dois ao cliente antes de chamar."
+                    "de um pedido. Precisa de dois dados: o número do pedido e UM contato do cliente "
+                    "(e-mail OU telefone — qualquer um dos dois basta; não peça ambos). A própria "
+                    "ferramenta confere se o contato bate com o cadastro (LGPD): chame assim que tiver "
+                    "os dois dados, sem julgar antes se o contato está certo."
                 ),
                 "parameters": {
                     "type": "object",
@@ -241,14 +243,14 @@ class Toolbox:
         preco_min: float | None = None,
         preco_max: float | None = None,
         incluir_indisponiveis: bool = False,
-        limite: int = 8,
+        limite: int = 15,
     ) -> dict:
         if categoria and not self.store.category_by_name(categoria):
             raise ToolError(f"Categoria inexistente: {categoria}")
         found, aproximado = self.store.search_products(
             termo, categoria, preco_min, preco_max, incluir_indisponiveis
         )
-        limite = max(1, min(int(limite or 8), 20))
+        limite = max(1, min(int(limite or 15), 20))
         result: dict[str, Any] = {
             "total_encontrado": len(found),
             "produtos": [_product_summary(p) for p in found[:limite]],

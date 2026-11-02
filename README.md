@@ -83,6 +83,7 @@ Também avaliei pôr o manual inteiro no prompt de sistema (cerca de 3 mil token
 - **Modelo padrão `gpt-4.1-mini`:**
   - segue bem instruções longas e chama ferramentas de forma confiável;
   - responde rápido e custa pouco, o que importa num atendimento com várias mensagens curtas.
+- **Comparação:** rodei os cenários mais difíceis (devolução e pedido com verificação) também com `gpt-5.4-mini`. Não houve ganho claro, e ele inclusive abriu um chamado sem confirmar com o cliente. Os erros do `gpt-4.1-mini` foram resolvidos ajustando o prompt e as descrições das ferramentas. Detalhe: na Chat Completions o `gpt-5.4-mini` só aceita ferramentas com `reasoning_effort=none`.
 - **Configurável:** dá para trocar por `EMPORIO_MODEL`. Com um modelo de raciocínio (ex.: `gpt-5-mini`), defina `EMPORIO_REASONING_EFFORT`. O código envia `reasoning_effort` só nesse caso; nos outros envia `temperature=0.3`, para respostas consistentes.
 - **Cache de prompt:** a OpenAI faz cache automático de prefixos repetidos. Por isso o prompt de sistema é estático e vem primeiro. A **data/hora atual** entra a cada turno como uma mensagem de sistema junto da mensagem do cliente, sem alterar o prefixo. A hora é necessária para horário de funcionamento e prazos.
 - **Independência de provedor:** a lógica de negócio (dados, políticas, ferramentas, prompt) não depende do provedor. Só `agent.py` conversa com a API, então trocar de provedor é reescrever esse arquivo. Fiz isso na prática: o projeto começou com a API da Anthropic e migrou para a OpenAI (ver histórico de commits).
