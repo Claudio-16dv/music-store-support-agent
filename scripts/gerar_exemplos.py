@@ -41,6 +41,7 @@ SCENARIOS: dict[str, tuple[str, list[str]]] = {
             "Me arrependi da minha compra, posso devolver meu pedido?",
             "É o pedido 7, meu e-mail é leticia.rocha@jmail.com",
             "Na verdade o ukulele começou a apresentar um chiado no braço, parece defeito. E agora?",
+            "Pode registrar sim, usa o mesmo e-mail.",
         ],
     ),
     "04_pedido_atrasado_lgpd": (
