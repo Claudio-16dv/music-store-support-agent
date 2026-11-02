@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Callable
 
 from . import config
@@ -25,6 +25,7 @@ from .data import (
     OUT_OF_STOCK,
     Product,
     StoreData,
+    only_digits,
     payment_method_label,
 )
 from .policies import SECTION_KEYS, get_sections
@@ -337,6 +338,14 @@ class Toolbox:
             return denied
         if not self.store.identity_matches(order.customer, email_or_phone=email_or_phone):
             return denied
+        if "@" in email_or_phone and self.store.email_is_shared(email_or_phone):
+            return {
+                "verified": False,
+                "message": (
+                    "This e-mail is linked to more than one customer record, so it cannot confirm "
+                    "ownership. Ask for the phone number used in the purchase instead."
+                ),
+            }
 
         today_ = self.clock()
         days_since_purchase = (today_ - order.order_date).days
@@ -380,11 +389,23 @@ class Toolbox:
             # There is no actual receipt date; the delivery estimate is used as the reference.
             received = order.estimated_delivery or order.order_date
             days_since_receipt = (today_ - received).days
+            legal_until = (received + timedelta(days=LEGAL_WARRANTY_DAYS)).isoformat()
             result["deadlines"] = {
                 "receipt_reference": f"{received.isoformat()} (delivery estimate; the actual receipt date is not in the system)",
                 "withdrawal_7_days_after_receipt": "within the deadline" if days_since_receipt <= WITHDRAWAL_DAYS else f"expired ({days_since_receipt} days since receipt)",
-                "defect_exchange_30_days_after_purchase": "within the deadline" if days_since_purchase <= DEFECT_EXCHANGE_DAYS else f"expired ({days_since_purchase} days since purchase) — defects go to the manufacturer's warranty, the store can mediate",
-                "legal_warranty_90_days_after_receipt": "active" if days_since_receipt <= LEGAL_WARRANTY_DAYS else "ended (check the manufacturer's warranty: 6 months to 2 years)",
+                "defect_exchange_30_days_after_purchase": "within the deadline" if days_since_purchase <= DEFECT_EXCHANGE_DAYS else f"expired ({days_since_purchase} days since purchase)",
+                # §4.2 sends defects to the manufacturer after 30 days, but §8.1 (CDC) gives a
+                # 90-day legal warranty from receipt: within it, the store handles the defect.
+                "legal_warranty_90_days_after_receipt": (
+                    f"active until {legal_until}: the store handles manufacturing defects (open a ticket for the team)"
+                    if days_since_receipt <= LEGAL_WARRANTY_DAYS
+                    else f"ended on {legal_until}: defects go to the manufacturer's warranty (6 months to 2 years); the store can mediate"
+                ),
+                "note": (
+                    "Deadlines are counted from the estimated delivery date. Do not present it as the "
+                    "actual delivery date; if the customer received it later, take that into account "
+                    "before saying a deadline has expired."
+                ),
             }
         if alerts:
             result["alerts"] = alerts
@@ -427,6 +448,10 @@ class Toolbox:
         customer_name: str = "",
         order_number: int | None = None,
     ) -> dict:
+        if "@" not in contact and len(only_digits(contact)) < 8:
+            raise ToolError(
+                "A valid phone number or e-mail is required: ask the customer for one before opening the ticket."
+            )
         protocol = f"EM-{datetime.now(config.TIMEZONE):%Y%m%d}-{uuid.uuid4().hex[:6].upper()}"
         record = {
             "protocol": protocol,

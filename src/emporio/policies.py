@@ -47,6 +47,12 @@ INTERPRETATION_NOTES = {
         "minimum installment of R$ 50,00; 4x to 6x with a minimum of R$ 80,00; 7x to 12x with "
         "a minimum of R$ 100,00. Use the simulate_payment tool to compute the options for an amount."
     ),
+    "returns_and_exchanges": (
+        "Section 4.2 says that after 30 days the customer must go to the manufacturer, but section "
+        "8.1 (Consumer Defense Code) gives a 90-day legal warranty from receipt. Interpretation: "
+        "within those 90 days the store handles manufacturing defects (open a ticket for the team); "
+        "after that, the manufacturer's warranty applies and the store can mediate."
+    ),
     "customer_service_guidelines": (
         "The official WhatsApp number is (67) 3341-4444 (see about_the_store)."
     ),

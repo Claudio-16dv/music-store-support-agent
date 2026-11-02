@@ -369,6 +369,11 @@ class StoreData:
     def get_order(self, order_id: int) -> Order | None:
         return self.orders.get(order_id)
 
+    def email_is_shared(self, email: str) -> bool:
+        """True when more than one customer record uses this e-mail (e.g. customers 11 and 43)."""
+        target = email.strip().casefold()
+        return sum(1 for c in self.customers.values() if c.email.casefold() == target) > 1
+
     @staticmethod
     def identity_matches(customer: Customer, email_or_phone: str) -> bool:
         """Checks whether the given contact belongs to the order owner (LGPD)."""

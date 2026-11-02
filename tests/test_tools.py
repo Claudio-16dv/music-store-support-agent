@@ -44,7 +44,7 @@ def test_delivered_order_computes_deadlines(toolbox):
     assert r["status"] == "delivered"
     assert r["deadlines"]["withdrawal_7_days_after_receipt"].startswith("expired")
     assert r["deadlines"]["defect_exchange_30_days_after_purchase"].startswith("expired")
-    assert r["deadlines"]["legal_warranty_90_days_after_receipt"] == "active"
+    assert r["deadlines"]["legal_warranty_90_days_after_receipt"].startswith("active until 2026-05-18")
 
 
 def test_late_shipped_order_raises_alert(toolbox):
@@ -106,3 +106,18 @@ def test_search_by_name_finds_unavailable_models(toolbox, product_id):
 def test_conflicting_description_is_omitted(toolbox):
     r = run(toolbox, "product_details", product_id=135)
     assert "description" not in r and "data_note" in r
+
+
+def test_shared_email_requires_phone(toolbox):
+    order = toolbox.store.orders[10]
+    assert toolbox.store.email_is_shared(order.customer.email)
+    r = run(toolbox, "lookup_order", order_number=10, email_or_phone=order.customer.email)
+    assert r["verified"] is False and "phone" in r["message"]
+    r = run(toolbox, "lookup_order", order_number=10, email_or_phone=order.customer.phone)
+    assert r["verified"] is True
+
+
+@pytest.mark.parametrize("contact", ["", "não informado", "7821"])
+def test_ticket_requires_a_real_contact(toolbox, contact):
+    with pytest.raises(ToolError):
+        toolbox.run("create_ticket", {"type": "talk_to_agent", "summary": "x", "contact": contact})
