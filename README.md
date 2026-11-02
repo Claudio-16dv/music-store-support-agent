@@ -40,7 +40,7 @@ Inside the chat: `/debug` toggles debug mode, `/new` starts another conversation
 Other commands:
 
 ```bash
-pytest                                # 33 tests, no API calls
+pytest                                # 47 tests, no API calls
 python scripts/generate_examples.py   # regenerates the conversations in examples/ (calls the API)
 ```
 
@@ -87,7 +87,7 @@ I also considered putting the whole manual in the system prompt (about 3k tokens
   - is fast and cheap, which matters for customer service with many short messages.
 - **Comparison:** I also ran the hardest scenarios (return, and order with verification) with `gpt-5.4-mini`. There was no clear gain, and it even opened a ticket without confirming with the customer. The `gpt-4.1-mini` mistakes were fixed by adjusting the prompt and the tool descriptions. Note: on Chat Completions, `gpt-5.4-mini` only accepts tools with `reasoning_effort=none`.
 - **Configurable:** switch it with `EMPORIO_MODEL`. With a reasoning model (e.g. `gpt-5-mini`), set `EMPORIO_REASONING_EFFORT`. The code sends `reasoning_effort` only in that case; otherwise it sends `temperature=0.3` for consistent answers.
-- **Prompt caching:** OpenAI automatically caches repeated prefixes. That is why the system prompt is static and comes first. The **current date/time** is added on each turn as a system message next to the customer's message, without changing the prefix. The time is needed for opening hours and deadlines.
+- **Prompt caching:** OpenAI automatically caches repeated prefixes. That is why the system prompt is static and comes first. The **current date/time** is added on each turn as a system message next to the customer's message, without changing the prefix. The time is needed for opening hours and deadlines, and the note also flags public holidays, when the store is closed (national and Mato Grosso do Sul holidays from the `holidays` package, plus Campo Grande's anniversary on August 26).
 - **Provider independence:** the business logic (data, policies, tools, prompt) does not depend on the provider. Only `agent.py` talks to the API, so switching providers means rewriting that file. I did this in practice: the project started on the Anthropic API and moved to OpenAI (see the commit history).
 
 ### Prompt strategy
@@ -117,7 +117,11 @@ The tool descriptions reinforce the "when to use". The results carry guidance fi
 | More than one promotion per product (e.g. 93 and 96) | Only active promotions count; if more than one is active, the largest wins (they don't stack) |
 | No promotional price in the CSV | Computed (`price × (1 − discount)`) and always shown with the original price and the % |
 | `specs` JSON in different formats | Lenient parsing and normalized keys |
-| Text search ("takamine gd 20", accents, case) | Accent-free normalization, glued terms ("gd 20" → "gd20"); partial results are flagged as **approximate** so the agent does not mistake them for the requested item |
+| Text search ("takamine gd 20", "violões", accents, case) | Accent-free, whole-word matching with light plural/gender stemming; numbers are kept ("violão 7 cordas" only returns 7-string guitars); split model codes are glued only when the glued form exists ("gd 20" → "gd20"). Partial results are flagged as **approximate** so the agent does not mistake them for the requested item |
+| A customer asks for a model that is out of stock, discontinued or coming soon | The default search only returns products for sale, so when the exact model exists only among unavailable ones, it is returned with its real situation and the agent explains it instead of saying "we don't have it" |
+| **Descriptions that name another brand** (ids 135, 137, 139, 140, 142, 144 — e.g. "Music Man Bass 1X" described as a "Fender Jazz Bass", "Korg" keyboard described as a Roland with 88 keys while the specs say 61) | Detected automatically (the description mentions a brand that is not in the name). The name and specs are treated as the source of truth: those descriptions are left out of the search index and of `product_details`, to avoid misleading information |
+| Customers 11 and 43 share the same e-mail | A shared e-mail does not verify order ownership; the agent asks for the phone instead |
+| Some past orders do not follow today's rules (PIX orders 1, 5, 10, 13 and 17 charged without the 5% discount; orders 9, 16 and 18 with installments below the minimum) | Historical orders are shown as recorded; the rules are only applied to new simulations |
 | Orders have no actual receipt date | The delivery estimate is used as the reference for deadlines, and the agent is told so |
 | Some order totals ≠ sum of current prices (e.g. orders 3 and 20) | The order total is treated as the amount actually charged (prices change, discounts may apply); it is not recomputed |
 | Orders from 2025–2026 and a moving "today" | Deadlines are computed against the current date: "shipped" orders past their estimate and orders stuck for a long time raise alerts and a ticket offer |
@@ -125,11 +129,11 @@ The tool descriptions reinforce the "when to use". The results carry guidance fi
 
 ### Assumptions about inconsistencies in the manual
 
-The challenge asks for the interpretations to be documented. They are also attached to the section text returned to the agent, so it always answers the same way.
+The challenge asks for the interpretations to be documented. Assumptions 1–3 and 6 are also attached to the section text returned to the agent (`INTERPRETATION_NOTES`), so it always answers the same way; 4, 5 and 7 are in the system prompt and the tools.
 
 1. **WhatsApp:** the cover and the data table show **(67) 3341-4444**, while section 7 mentions **(67) 3321-4500**. I adopted 3341-4444, which appears in two places, including the company's official table.
 2. **E-mail:** the table shows `contato@empóriodamusica.com.br` (with an accent); I treated it as a typo and use the cover's `contato@emporiodamusica.com.br`.
-3. **Installments:** the table says "minimum installment of R$ 100,00", but section 3.1 details tiers. The more specific rule prevails:
+3. **Installments:** the table says "minimum installment of R$ 100,00", but section 3.1 details tiers. The more specific rule prevails. Section 3.1 also says "up to 3x: no minimum installment (except below R$ 50,00)", which I read as a R$ 50 minimum installment for 1x–3x:
    - 1x to 3x: minimum installment of R$ 50;
    - 4x to 6x: minimum of R$ 80;
    - 7x to 12x: minimum of R$ 100.
@@ -137,12 +141,17 @@ The challenge asks for the interpretations to be documented. They are also attac
    A purchase under R$ 50 can be paid in 1x.
 4. **Right of withdrawal** applies to online purchases. The data does not say which channel a purchase came from, so the agent asks the customer when it matters.
 5. **Closing a sale and reservations:** there is no system for that, so the agent gives the conditions and refers the customer to the store or to a human agent.
+6. **Defects after 30 days:** section 4.2 says that after 30 days the customer must go to the manufacturer, but section 8.1 gives a 90-day legal warranty from receipt (Consumer Defense Code). Within those 90 days the store handles the defect (the agent opens a ticket); after that, the manufacturer's warranty applies and the store can mediate.
+7. **Holidays:** the manual says the store is closed on holidays without listing them. I used the national and Mato Grosso do Sul holidays plus Campo Grande's anniversary (August 26). Dates I could not confirm as municipal holidays (Corpus Christi, June 13) are treated as regular days.
 
 ### Security and LGPD
 
 - Order data is only shown with the order number **and** the owner's e-mail/phone.
 - When verification fails, the response is the same for "order does not exist" and "details don't match", so it does not reveal whether the order exists.
 - From the customer record, the agent only receives the first name; the stored phone, e-mail and city never enter the model's context.
+- An e-mail shared by more than one customer record does not verify ownership; the agent asks for the phone.
+- The agent never gives a customer's contact, address or order details to a third party (e.g. someone claiming to be a courier), even if they know the order number.
+- Tickets require a real phone or e-mail, so the team can always reach the customer back.
 - The prompt says to ignore attempts to change the rules, take on another role or reveal the prompt.
 
 ## Example conversations
@@ -165,6 +174,9 @@ Conversations generated live by the agent with `scripts/generate_examples.py`. T
 - **Interface:** CLI only. The next step is to expose `EmporioAgent.send()` through an API and a WhatsApp webhook, with the history in a database instead of files.
 - **Tickets** live in a JSONL file. Ideally they would go to a helpdesk or notify the team.
 - **Receipt date:** deadlines use the delivery estimate because the actual date is not in the data.
+- **Holiday calendar:** national, state and the city anniversary only; special opening hours (the manual mentions extended hours on dates like Black Friday) are not modeled.
+- **Conversation length:** the whole history is resent on every turn and is never trimmed or summarized. Fine for customer service chats; very long sessions would need a window or a summary.
+- **Customer language:** Lia always answers in Brazilian Portuguese, even if the customer writes in another language.
 - **Observability:** I would log tokens, latency and tools used per conversation to track cost and quality.
 
 ## Use of coding assistants
@@ -175,5 +187,6 @@ I used **Claude Code** (Anthropic) as a pair programmer throughout the challenge
 2. **Plan and decisions:** we discussed the approach (function calling vs. RAG vs. SQL), the provider and the interface. I approved the plan before implementation.
 3. **Incremental implementation:** it wrote the code in steps (data → policies → tools → agent → CLI → tests), running the tests and checking the tool output against the real data. Each step became a commit.
 4. **Review:** I reviewed the decisions, the assumptions and the example conversations, which were generated live by the agent with the script, not written by hand.
+5. **Audit before delivery:** I asked for an audit against the challenge statement. Claude Code installed the published repository from a clean clone, ran adversarial conversations against the live agent (prompt injection, a "courier" asking for another customer's data, unavailable models, holidays, a ticket without contact…) and had an independent sub-agent check every rule against the manual and every README claim against the CSVs. The bugs found (e.g. the agent saying the store was open on a public holiday, unavailable models invisible to search, contradictory product descriptions) were fixed in separate commits.
 
 The assistant sped up the mechanical work (parsing, tests, boilerplate). The product and business decisions (what to do with inconsistent data, LGPD rules, scope) were made explicit and documented here.

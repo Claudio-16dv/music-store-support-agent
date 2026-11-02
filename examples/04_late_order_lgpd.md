@@ -2,7 +2,7 @@
 
 > Order status: first with a wrong contact (LGPD), then the right one; the late order becomes a ticket.
 >
-> Generated automatically by `scripts/generate_examples.py` on 2026-11-02 11:09 (Campo Grande time) with the `gpt-4.1-mini` model (OpenAI). The conversation is in Portuguese, as with the store's real customers.
+> Generated automatically by `scripts/generate_examples.py` on 2026-11-02 14:48 (Campo Grande time) with the `gpt-4.1-mini` model (OpenAI). The conversation is in Portuguese, as with the store's real customers.
 
 **Customer:** Boa tarde, cadê meu pedido 8? Meu email é ana@gmail.com
 
@@ -16,7 +16,7 @@
 
 </details>
 
-**Lia:** Oi! Aqui é a Lia, da Empório da Música 🎸 Não consegui confirmar o pedido com o número 8 e o e-mail ana@gmail.com. Você pode conferir se o número do pedido e o e-mail estão certinhos?
+**Lia:** Oi! Aqui é a Lia, da Empório da Música 🎸 Não consegui confirmar o pedido com o número 8 e o e-mail ana@gmail.com. Pode, por favor, verificar se o número do pedido e o e-mail estão corretos? Assim eu posso ajudar melhor.
 
 ---
 
@@ -32,7 +32,7 @@
 
 </details>
 
-**Lia:** Ana, seu pedido 8 com o ukulele Kala KA-C Concert Mogno foi enviado, mas a entrega está muito atrasada (a previsão era para 28/02/2026). O código de rastreamento é BRJL5544332BR. Posso abrir um chamado para a equipe verificar esse atraso pra você?
+**Lia:** Ana, seu pedido 8 com o ukulele Kala KA-C Concert Mogno foi enviado e o código de rastreio é BRJL5544332BR. A entrega estava prevista para 28/02/2026, mas já passou bastante. Peço desculpas pelo atraso. Quer que eu abra um chamado para a equipe investigar essa demora?
 
 ---
 
@@ -43,11 +43,11 @@
 - `create_ticket({"type": "complaint", "summary": "Cliente Ana reclama de atraso na entrega do pedido 8 e solicita contato por telefone.", "customer_name": "Ana", "contact": "67996547821", "order_number": 8})`
 
   ```json
-  {"protocol": "EM-20261102-FE5B12", "response_time": "within 24 business hours", "message": "Ticket created and forwarded to the responsible team."}
+  {"protocol": "EM-20261102-754A9A", "response_time": "within 24 business hours", "message": "Ticket created and forwarded to the responsible team."}
   ```
 
 </details>
 
-**Lia:** Ana, registrei sua reclamação sobre o atraso na entrega do pedido 8 e pedi para a equipe entrar em contato pelo seu telefone (67) 99654-7821. O protocolo é EM-20261102-FE5B12. Eles vão responder em até 24 horas úteis.
+**Lia:** Ana, registrei sua reclamação sobre o atraso na entrega do pedido 8 e pedi para a equipe entrar em contato pelo seu telefone (67) 99654-7821. O protocolo é EM-20261102-754A9A. Eles responderão em até 24 horas úteis. Posso ajudar com mais alguma coisa?
 
 ---
