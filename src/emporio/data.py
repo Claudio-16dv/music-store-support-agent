@@ -1,8 +1,8 @@
-"""Carga, limpeza e consulta dos dados operacionais da loja (CSVs).
+"""Loading, cleaning and querying of the store's operational data (CSVs).
 
-Os CSVs são pequenos (dezenas de linhas), então tudo é carregado em memória
-na inicialização. As regras de limpeza/interpretação estão concentradas aqui
-para que as ferramentas do agente recebam dados já consistentes.
+The CSVs are small (tens of rows), so everything is loaded into memory at
+startup. Cleaning/interpretation rules live here so the agent's tools always
+receive consistent data.
 """
 
 from __future__ import annotations
@@ -17,31 +17,32 @@ from pathlib import Path
 
 from . import config
 
-# Status de produto no CSV -> situação de venda exposta ao agente.
-DISPONIVEL = "disponivel"
-ESGOTADO = "esgotado"
-DESCONTINUADO = "descontinuado"
-EM_BREVE = "em_breve"
+# Product status in the CSV -> sales availability exposed to the agent.
+AVAILABLE = "available"
+OUT_OF_STOCK = "out_of_stock"
+DISCONTINUED = "discontinued"
+COMING_SOON = "coming_soon"
 
-ORDER_STATUS_PT = {
-    "pending": "aguardando pagamento",
-    "confirmed": "pagamento confirmado, em separação",
-    "shipped": "enviado",
-    "delivered": "entregue",
-    "cancelled": "cancelado",
+ORDER_STATUS_LABELS = {
+    "pending": "awaiting payment",
+    "confirmed": "payment confirmed, being prepared",
+    "shipped": "shipped",
+    "delivered": "delivered",
+    "cancelled": "cancelled",
 }
 
+# Customers (and the catalog) write in Portuguese, so the stopwords are Portuguese.
 STOPWORDS = {"de", "da", "do", "das", "dos", "para", "com", "sem", "e", "o", "a", "os", "as", "um", "uma", "em", "no", "na"}
 
-PAYMENT_METHOD_PT = {
+PAYMENT_METHOD_LABELS = {
     "pix": "PIX",
-    "debit": "cartão de débito",
-    "boleto": "boleto bancário",
+    "debit": "debit card",
+    "boleto": "boleto (bank slip)",
 }
 
 
 def normalize(text: str) -> str:
-    """Minúsculas, sem acentos e com espaços simples — base de toda busca textual."""
+    """Lowercase, accent-free, single-spaced — the basis of all text search."""
     text = unicodedata.normalize("NFKD", text or "")
     text = "".join(c for c in text if not unicodedata.combining(c))
     return re.sub(r"\s+", " ", text.lower()).strip()
@@ -51,10 +52,10 @@ def only_digits(text: str) -> str:
     return re.sub(r"\D", "", text or "")
 
 
-def payment_method_pt(code: str) -> str:
+def payment_method_label(code: str) -> str:
     if code.startswith("credit_"):
-        return f"cartão de crédito em {code.removeprefix('credit_')}"
-    return PAYMENT_METHOD_PT.get(code, code)
+        return f"credit card in {code.removeprefix('credit_')} installments"
+    return PAYMENT_METHOD_LABELS.get(code, code)
 
 
 @dataclass
@@ -88,12 +89,12 @@ class Product:
     _search_text: str = field(default="", repr=False)
 
     @property
-    def situacao(self) -> str:
+    def availability(self) -> str:
         if self.raw_status == "discontinued":
-            return DESCONTINUADO
+            return DISCONTINUED
         if self.raw_status == "coming_soon":
-            return EM_BREVE
-        return DISPONIVEL if self.stock > 0 else ESGOTADO
+            return COMING_SOON
+        return AVAILABLE if self.stock > 0 else OUT_OF_STOCK
 
     @property
     def promo_price(self) -> float | None:
@@ -154,12 +155,12 @@ def _parse_specs(raw: str) -> dict:
         specs = json.loads(raw) if raw else {}
     except json.JSONDecodeError:
         return {}
-    # Alguns produtos usam chaves/valores com espaços extras; normalizamos.
+    # Some products have keys/values with extra spaces; normalize them.
     return {str(k).strip(): (v.strip() if isinstance(v, str) else v) for k, v in specs.items()}
 
 
 class StoreData:
-    """Repositório em memória com as consultas que o agente precisa."""
+    """In-memory repository with the queries the agent needs."""
 
     def __init__(self, data_dir: Path = config.DATA_DIR):
         self.categories = {
@@ -199,7 +200,7 @@ class StoreData:
             product = self.products.get(promo.product_id)
             if not promo.is_active or product is None:
                 continue
-            # Promoções não são cumulativas: se houver mais de uma ativa, vale a maior.
+            # Promotions don't stack: if more than one is active, the largest wins.
             current = product.active_promotion
             if current is None or promo.discount_percent > current.discount_percent:
                 product.active_promotion = promo
@@ -232,7 +233,7 @@ class StoreData:
             pid = int(r["product_id"])
             order.items.append(OrderItem(self.products.get(pid), pid, int(r["quantity"])))
 
-    # ------------------------------------------------------------------ produtos
+    # ------------------------------------------------------------------ products
 
     def category_by_name(self, name: str) -> Category | None:
         target = normalize(name)
@@ -249,19 +250,19 @@ class StoreData:
         max_price: float | None = None,
         include_unavailable: bool = False,
     ) -> tuple[list[Product], bool]:
-        """Busca por texto + filtros. Preço filtrado pelo preço final (com promoção).
+        """Text search + filters. Price filters use the final (promotional) price.
 
-        Todos os termos precisam aparecer no produto; se nenhum produto casar,
-        tenta juntar os termos ("takamine gd 20" -> GD20) e, por fim, cai para
-        correspondência parcial. Retorna (produtos, aproximado) — aproximado=True
-        indica que nem todos os termos foram encontrados.
+        Every term must appear in the product; if nothing matches, it tries
+        gluing the terms together ("takamine gd 20" -> GD20) and finally falls
+        back to partial matching. Returns (products, approximate) —
+        approximate=True means not all terms were found.
         """
         candidates = list(self.products.values())
         if category:
             cat = self.category_by_name(category)
             candidates = [p for p in candidates if cat and p.category.id == cat.id]
         if not include_unavailable:
-            candidates = [p for p in candidates if p.situacao == DISPONIVEL]
+            candidates = [p for p in candidates if p.availability == AVAILABLE]
         if min_price is not None:
             candidates = [p for p in candidates if p.final_price >= min_price]
         if max_price is not None:
@@ -278,7 +279,7 @@ class StoreData:
         exact = [p for p in candidates if score(p) == len(terms)]
         if exact:
             return sorted(exact, key=lambda p: p.final_price), False
-        # Junta termos vizinhos ("gd 20" -> "gd20") antes de cair na busca parcial.
+        # Glue neighbouring terms ("gd 20" -> "gd20") before falling back to partial matching.
         joined = "".join(terms)
         glued = [p for p in candidates if joined in p._search_text.replace(" ", "").replace("-", "")]
         if glued:
@@ -288,11 +289,11 @@ class StoreData:
         return [p for _, p in partial], True
 
     def similar_available(self, product: Product, limit: int = 3) -> list[Product]:
-        """Alternativas disponíveis da mesma categoria, mais próximas em preço."""
+        """Available alternatives from the same category, closest in price."""
         same_cat = [
             p
             for p in self.products.values()
-            if p.category.id == product.category.id and p.id != product.id and p.situacao == DISPONIVEL
+            if p.category.id == product.category.id and p.id != product.id and p.availability == AVAILABLE
         ]
         same_cat.sort(key=lambda p: abs(p.final_price - product.final_price))
         return same_cat[:limit]
@@ -306,18 +307,18 @@ class StoreData:
     def inactive_promotions_for(self, product_id: int) -> list[Promotion]:
         return [p for p in self.promotions if p.product_id == product_id and not p.is_active]
 
-    # ------------------------------------------------------------------ pedidos
+    # ------------------------------------------------------------------ orders
 
     def get_order(self, order_id: int) -> Order | None:
         return self.orders.get(order_id)
 
     @staticmethod
     def identity_matches(customer: Customer, email_or_phone: str) -> bool:
-        """Confere se o contato informado pertence ao titular do pedido (LGPD)."""
+        """Checks whether the given contact belongs to the order owner (LGPD)."""
         value = (email_or_phone or "").strip()
         if "@" in value:
             return value.casefold() == customer.email.casefold()
         digits = only_digits(value)
-        # Aceita com ou sem DDD/código do país: compara os 8 últimos dígitos
-        # e exige pelo menos 8 dígitos informados.
+        # Accepts numbers with or without area/country code: compares the last
+        # 8 digits and requires at least 8 digits.
         return len(digits) >= 8 and only_digits(customer.phone).endswith(digits[-8:])

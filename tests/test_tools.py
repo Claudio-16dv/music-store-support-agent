@@ -10,85 +10,85 @@ def run(toolbox, name, **args):
     return json.loads(toolbox.run(name, args))
 
 
-def test_schemas_validos(toolbox):
+def test_valid_schemas(toolbox):
     names = {s["name"] for s in toolbox.schemas}
     assert names == set(toolbox._handlers)
     for s in toolbox.schemas:
         assert s["parameters"]["type"] == "object"
 
 
-def test_buscar_violoes_ate_1000(toolbox):
-    r = run(toolbox, "buscar_produtos", categoria="Violões", preco_max=1000, limite=20)
-    assert r["total_encontrado"] == len(r["produtos"]) == 12
+def test_search_acoustic_guitars_up_to_1000(toolbox):
+    r = run(toolbox, "search_products", category="Violões", max_price=1000, limit=20)
+    assert r["total_found"] == len(r["products"]) == 12
 
 
-def test_produto_esgotado_sugere_alternativas(toolbox):
-    r = run(toolbox, "detalhes_produto", produto_id=96)
-    assert r["situacao"] == "esgotado"
-    assert r["alternativas_disponiveis"]
-    assert all(a["situacao"] == "disponivel" for a in r["alternativas_disponiveis"])
-    assert r["promocoes_encerradas"] == ["Semana do Músico"]
+def test_out_of_stock_product_suggests_alternatives(toolbox):
+    r = run(toolbox, "product_details", product_id=96)
+    assert r["availability"] == "out_of_stock"
+    assert r["available_alternatives"]
+    assert all(a["availability"] == "available" for a in r["available_alternatives"])
+    assert r["ended_promotions"] == ["Semana do Músico"]
 
 
-def test_pedido_exige_identidade(toolbox):
-    r = run(toolbox, "consultar_pedido", numero_pedido=8, email_ou_telefone="intruso@x.com")
-    assert r["verificado"] is False
+def test_order_requires_identity(toolbox):
+    r = run(toolbox, "lookup_order", order_number=8, email_or_phone="intruder@x.com")
+    assert r["verified"] is False
     assert "Kala" not in json.dumps(r)
-    r = run(toolbox, "consultar_pedido", numero_pedido=999, email_ou_telefone="a@b.com")
-    assert r["verificado"] is False
+    r = run(toolbox, "lookup_order", order_number=999, email_or_phone="a@b.com")
+    assert r["verified"] is False
 
 
-def test_pedido_entregue_calcula_prazos(toolbox):
-    # Pedido 7: entregue com previsão 2026-02-17; "hoje" nos testes = 2026-03-25.
-    r = run(toolbox, "consultar_pedido", numero_pedido=7, email_ou_telefone=_email(toolbox, 7))
-    assert r["status"] == "entregue"
-    assert r["prazos"]["arrependimento_7_dias_apos_recebimento"].startswith("expirado")
-    assert r["prazos"]["troca_por_defeito_30_dias_apos_compra"].startswith("expirado")
-    assert r["prazos"]["garantia_legal_90_dias_apos_recebimento"] == "vigente"
+def test_delivered_order_computes_deadlines(toolbox):
+    # Order 7: delivered, estimate 2026-02-17; "today" in the tests = 2026-03-25.
+    r = run(toolbox, "lookup_order", order_number=7, email_or_phone=_email(toolbox, 7))
+    assert r["status"] == "delivered"
+    assert r["deadlines"]["withdrawal_7_days_after_receipt"].startswith("expired")
+    assert r["deadlines"]["defect_exchange_30_days_after_purchase"].startswith("expired")
+    assert r["deadlines"]["legal_warranty_90_days_after_receipt"] == "active"
 
 
-def test_pedido_enviado_atrasado_gera_alerta(toolbox):
-    r = run(toolbox, "consultar_pedido", numero_pedido=8, email_ou_telefone=_email(toolbox, 8))
-    assert r["codigo_rastreio"] == "BRJL5544332BR"
-    assert "vencida" in r["alertas"][0]
+def test_late_shipped_order_raises_alert(toolbox):
+    r = run(toolbox, "lookup_order", order_number=8, email_or_phone=_email(toolbox, 8))
+    assert r["tracking_code"] == "BRJL5544332BR"
+    assert "passed" in r["alerts"][0]
 
 
-def test_pedido_cancelado_mostra_motivo(toolbox):
-    r = run(toolbox, "consultar_pedido", numero_pedido=18, email_ou_telefone=_email(toolbox, 18))
-    assert r["status"] == "cancelado"
-    assert "fora de estoque" in r["observacao"]
+def test_cancelled_order_shows_reason(toolbox):
+    r = run(toolbox, "lookup_order", order_number=18, email_or_phone=_email(toolbox, 18))
+    assert r["status"] == "cancelled"
+    assert "fora de estoque" in r["notes"]
 
 
 @pytest.mark.parametrize(
-    "valor,promo,max_parcelas,pix",
+    "amount,promo,max_installments,pix",
     [
-        (2199, False, 12, "R$ 2.089,05 (5% de desconto)"),
-        (159.9, False, 3, "R$ 151,91 (5% de desconto)"),
-        (439.2, True, 5, "R$ 439,20 (sem desconto adicional: valor já é promocional)"),
-        (40, False, 1, "R$ 38,00 (5% de desconto)"),
+        (2199, False, 12, "R$ 2.089,05 (5% discount)"),
+        (159.9, False, 3, "R$ 151,91 (5% discount)"),
+        (439.2, True, 5, "R$ 439,20 (no extra discount: the amount is already promotional)"),
+        (40, False, 1, "R$ 38,00 (5% discount)"),
     ],
 )
-def test_simular_pagamento(toolbox, valor, promo, max_parcelas, pix):
-    r = run(toolbox, "simular_pagamento", valor=valor, valor_ja_promocional=promo)
-    assert max(r["parcelas_possiveis"]) == max_parcelas
+def test_simulate_payment(toolbox, amount, promo, max_installments, pix):
+    r = run(toolbox, "simulate_payment", amount=amount, is_promotional_price=promo)
+    assert max(r["possible_installments"]) == max_installments
     assert r["pix"] == pix
-    assert r["combinar_formas_pagamento"] is (valor > 2000)
+    assert r["can_combine_payment_methods"] is (amount > 2000)
 
 
-def test_registrar_chamado_grava_arquivo(toolbox):
-    r = run(toolbox, "registrar_chamado", tipo="reclamacao", resumo="teste", contato="a@b.com")
-    assert r["protocolo"].startswith("EM-")
-    linhas = config.TICKETS_FILE.read_text(encoding="utf-8").splitlines()
-    assert json.loads(linhas[-1])["protocolo"] == r["protocolo"]
+def test_create_ticket_writes_file(toolbox):
+    r = run(toolbox, "create_ticket", type="complaint", summary="test", contact="a@b.com")
+    assert r["protocol"].startswith("EM-")
+    lines = config.TICKETS_FILE.read_text(encoding="utf-8").splitlines()
+    assert json.loads(lines[-1])["protocol"] == r["protocol"]
 
 
-def test_erros_de_entrada(toolbox):
+def test_input_errors(toolbox):
     with pytest.raises(ToolError):
-        toolbox.run("nao_existe", {})
+        toolbox.run("does_not_exist", {})
     with pytest.raises(ToolError):
-        toolbox.run("buscar_produtos", {"categoria": "Acessórios"})
+        toolbox.run("search_products", {"category": "Acessórios"})
     with pytest.raises(ToolError):
-        toolbox.run("detalhes_produto", {})
+        toolbox.run("product_details", {})
 
 
 def _email(toolbox, order_id):

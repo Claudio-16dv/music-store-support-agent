@@ -1,177 +1,179 @@
-# 🎸 Empório da Música — Agente de Atendimento
+# 🎸 Empório da Música — Customer Service Agent
 
-Protótipo de agente de atendimento por mensagens de texto para a **Empório da Música**, loja fictícia de instrumentos musicais em Campo Grande/MS. O agente (a **Lia**) responde clientes sobre catálogo, preços, promoções, status de pedidos e políticas da loja, decidindo sozinho quando consultar **dados** (CSVs) e quando consultar **políticas** (PDF).
+Prototype of a text-message customer service agent for **Empório da Música**, a fictional musical instrument store in Campo Grande/MS, Brazil. The agent (**Lia**) answers customers about the catalog, prices, promotions, order status and store policies, deciding on its own when to check **data** (CSVs) and when to check **policies** (PDF).
+
+The code, prompt and documentation are in English. Lia talks to customers in **Brazilian Portuguese**, because the store and its customers are Brazilian; the source data (CSVs and the policy manual) are also in Portuguese.
 
 ```
-Cliente ──► CLI ──► EmporioAgent (loop de function calling) ──► OpenAI API
-                         │                                    ▲
-                         ▼                                    │ tool_result
-                    Toolbox (7 ferramentas) ──────────────────┘
-                     ├─ buscar_produtos / detalhes_produto / listar_promocoes_ativas ─► StoreData (CSVs limpos, em memória)
-                     ├─ consultar_pedido (com verificação de identidade)            ─► StoreData
-                     ├─ consultar_politicas (por seção do manual)                    ─► Manual PDF → 10 seções
-                     ├─ simular_pagamento (regras de PIX/parcelamento em código)
-                     └─ registrar_chamado (escalonamento para humano)                ─► .runtime/chamados.jsonl
+Customer ──► CLI ──► EmporioAgent (function-calling loop) ──► OpenAI API
+                          │                                    ▲
+                          ▼                                    │ tool result
+                     Toolbox (7 tools) ────────────────────────┘
+                      ├─ search_products / product_details / list_active_promotions ─► StoreData (clean CSVs, in memory)
+                      ├─ lookup_order (with identity verification)                  ─► StoreData
+                      ├─ get_policies (by manual section)                           ─► PDF manual → 10 sections
+                      ├─ simulate_payment (PIX/installment rules in code)
+                      └─ create_ticket (escalation to a human)                      ─► .runtime/tickets.jsonl
 ```
 
-## Como rodar
+## How to run
 
-Pré-requisitos: Python 3.11+ e uma chave da API da OpenAI.
+Requirements: Python 3.11+ and an OpenAI API key.
 
 ```bash
-git clone <url-do-repositorio> && cd emporio-agente
+git clone https://github.com/Claudio-16dv/music-store-support-agent.git && cd music-store-support-agent
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env        # e preencha OPENAI_API_KEY
+cp .env.example .env        # then fill in OPENAI_API_KEY
 ```
 
-Conversar com o agente:
+Chat with the agent:
 
 ```bash
-python -m emporio.cli            # nova conversa
-python -m emporio.cli --debug    # mostra cada ferramenta chamada e o que ela retornou
-python -m emporio.cli --sessao minha-sessao   # retoma uma conversa salva
+python -m emporio.cli                      # new conversation
+python -m emporio.cli --debug              # show every tool call and what it returned
+python -m emporio.cli --session my-session # resume a saved conversation
 ```
 
-Dentro do chat: `/debug` liga/desliga o modo debug, `/nova` inicia outra conversa, `/sair` encerra.
+Inside the chat: `/debug` toggles debug mode, `/new` starts another conversation, `/quit` exits.
 
-Outros comandos:
+Other commands:
 
 ```bash
-pytest                              # 33 testes, não chamam a API
-python scripts/gerar_exemplos.py    # regenera as conversas em exemplos/ (chama a API)
+pytest                                # 33 tests, no API calls
+python scripts/generate_examples.py   # regenerates the conversations in examples/ (calls the API)
 ```
 
-Configuração opcional no `.env`: `EMPORIO_MODEL` (padrão `gpt-4.1-mini`) e `EMPORIO_REASONING_EFFORT` (`low`/`medium`/`high`, só para modelos de raciocínio).
+Optional settings in `.env`: `EMPORIO_MODEL` (default `gpt-4.1-mini`) and `EMPORIO_REASONING_EFFORT` (`low`/`medium`/`high`, reasoning models only).
 
-## Estrutura
+## Layout
 
-| Caminho | O que tem |
+| Path | Contents |
 |---|---|
-| `src/emporio/data.py` | Carga e limpeza dos CSVs, busca de produtos, verificação de identidade |
-| `src/emporio/policies.py` | Extração do PDF em seções + notas de interpretação |
-| `src/emporio/tools.py` | Schemas e implementação das 7 ferramentas |
-| `src/emporio/prompts.py` | Prompt de sistema (persona e regras) |
-| `src/emporio/agent.py` | Loop do agente (chamada à API, execução de ferramentas, tratamento de erros) |
-| `src/emporio/storage.py` / `cli.py` | Persistência de sessões e interface de terminal |
-| `tests/` | Testes de dados, políticas, ferramentas e do loop (com cliente falso) |
-| `exemplos/` | Conversas reais com o agente |
+| `src/emporio/data.py` | CSV loading and cleaning, product search, identity verification |
+| `src/emporio/policies.py` | PDF extraction into sections + interpretation notes |
+| `src/emporio/tools.py` | Schemas and implementation of the 7 tools |
+| `src/emporio/prompts.py` | System prompt (persona and rules) |
+| `src/emporio/agent.py` | Agent loop (API call, tool execution, error handling) |
+| `src/emporio/storage.py` / `cli.py` | Session persistence and terminal interface |
+| `tests/` | Tests for data, policies, tools and the loop (with a fake client) |
+| `examples/` | Real conversations with the agent |
 
-## Decisões técnicas
+## Technical decisions
 
-### Abordagem: function calling com ferramentas determinísticas
+### Approach: function calling with deterministic tools
 
-O agente é um loop de *tool use*: o modelo recebe a mensagem, decide quais ferramentas chamar, recebe os resultados e responde. Por que não as alternativas:
+The agent is a *tool use* loop: the model receives the message, decides which tools to call, gets the results and replies. Why not the alternatives:
 
-- **RAG vetorial puro:** os dados de operação são **estruturados** (preço, estoque, status). Busca semântica sobre linhas de CSV erra filtros como "até R$ 1000" e não garante preço exato, o que o próprio manual proíbe ("nunca fornecer informações sobre preços, estoque ou prazos sem consultar o sistema").
-- **Agente de SQL (texto→SQL):** flexível, mas abre espaço para consultas erradas e para **vazamento de dados de clientes** (um `SELECT * FROM customers` resolve qualquer coisa). Com ferramentas fechadas, a regra de LGPD fica no código: `consultar_pedido` só devolve dados se número do pedido **e** e-mail/telefone baterem.
-- **Contas no código, não no modelo:** PIX, parcelas mínimas por faixa, prazos de arrependimento, troca e garantia são calculados em Python (`simular_pagamento`, `consultar_pedido`). O modelo explica; quem calcula é o código.
+- **Pure vector RAG:** the operational data is **structured** (price, stock, status). Semantic search over CSV rows gets filters like "up to R$ 1000" wrong and does not guarantee exact prices, which the manual itself forbids ("never give information about prices, stock or deadlines without checking the system").
+- **SQL agent (text→SQL):** flexible, but it leaves room for wrong queries and for **customer data leaks** (a `SELECT * FROM customers` answers anything). With closed tools, the LGPD (Brazil's data protection law) rule lives in code: `lookup_order` only returns data if the order number **and** the e-mail/phone match.
+- **Math in code, not in the model:** PIX, minimum installments per tier, and withdrawal, exchange and warranty deadlines are computed in Python (`simulate_payment`, `lookup_order`). The model explains; the code computes.
 
-Usei um **loop manual** sobre a Chat Completions API (em vez de um framework como LangChain) para controlar o limite de rodadas, registrar as chamadas (modo debug e exemplos), tratar cada `stop_reason` tratar argumentos JSON inválidos e desfazer o turno se a API falhar, para o histórico salvo nunca ficar inconsistente.
+I used a **manual loop** over the Chat Completions API (instead of a framework like LangChain) to control the round limit, record the calls (debug mode and examples), handle each `finish_reason`, handle invalid JSON arguments, and roll back the turn if the API fails, so the saved history is never left inconsistent.
 
-### Recuperação das políticas: por seção, sem banco vetorial
+### Policy retrieval: by section, no vector store
 
-O manual tem 8 páginas e 10 seções numeradas. O PDF é lido com `pypdf`, normalizado (o `pypdf` devolve uma palavra por linha neste arquivo) e cortado nos próprios títulos de seção. A ferramenta `consultar_politicas` recebe tópicos de um `enum` (`horario_funcionamento`, `trocas_devolucoes`, `formas_pagamento`…) e o modelo escolhe quais pedir.
+The manual has 8 pages and 10 numbered sections. The PDF is read with `pypdf`, normalized (`pypdf` returns one word per line for this file) and split along its own section titles. The `get_policies` tool takes topics from an `enum` (`opening_hours`, `returns_and_exchanges`, `payment_methods`…) and the model picks which ones to request.
 
-Para um documento desse tamanho isso é **mais preciso** (o texto volta inteiro, sem cortes arbitrários de chunk), **determinístico** (fácil de testar) e **sem infraestrutura extra**. Com um manual muito maior, eu trocaria por chunks por subseção + embeddings, mantendo a mesma interface da ferramenta.
+For a document this size that is **more accurate** (the text comes back whole, with no arbitrary chunk cuts), **deterministic** (easy to test) and **needs no extra infrastructure**. With a much larger manual I would switch to subsection chunks + embeddings, keeping the same tool interface.
 
-Também avaliei pôr o manual inteiro no prompt de sistema (cerca de 3 mil tokens, barato com cache). Fiquei com a ferramenta porque o desafio pede que o agente *saiba quando* consultar as políticas, e porque isso mantém o prompt focado em comportamento e escala melhor.
+I also considered putting the whole manual in the system prompt (about 3k tokens, cheap with caching). I kept the tool because the challenge asks the agent to *know when* to check the policies, and because it keeps the prompt focused on behavior and scales better.
 
-### Modelo e provedor: OpenAI (`gpt-4.1-mini` por padrão)
+### Model and provider: OpenAI (`gpt-4.1-mini` by default)
 
-- **Provedor:** API da OpenAI, via SDK oficial `openai` e Chat Completions com *function calling*. A escolha foi prática: é onde tenho créditos.
-- **Modelo padrão `gpt-4.1-mini`:**
-  - segue bem instruções longas e chama ferramentas de forma confiável;
-  - responde rápido e custa pouco, o que importa num atendimento com várias mensagens curtas.
-- **Comparação:** rodei os cenários mais difíceis (devolução e pedido com verificação) também com `gpt-5.4-mini`. Não houve ganho claro, e ele inclusive abriu um chamado sem confirmar com o cliente. Os erros do `gpt-4.1-mini` foram resolvidos ajustando o prompt e as descrições das ferramentas. Detalhe: na Chat Completions o `gpt-5.4-mini` só aceita ferramentas com `reasoning_effort=none`.
-- **Configurável:** dá para trocar por `EMPORIO_MODEL`. Com um modelo de raciocínio (ex.: `gpt-5-mini`), defina `EMPORIO_REASONING_EFFORT`. O código envia `reasoning_effort` só nesse caso; nos outros envia `temperature=0.3`, para respostas consistentes.
-- **Cache de prompt:** a OpenAI faz cache automático de prefixos repetidos. Por isso o prompt de sistema é estático e vem primeiro. A **data/hora atual** entra a cada turno como uma mensagem de sistema junto da mensagem do cliente, sem alterar o prefixo. A hora é necessária para horário de funcionamento e prazos.
-- **Independência de provedor:** a lógica de negócio (dados, políticas, ferramentas, prompt) não depende do provedor. Só `agent.py` conversa com a API, então trocar de provedor é reescrever esse arquivo. Fiz isso na prática: o projeto começou com a API da Anthropic e migrou para a OpenAI (ver histórico de commits).
+- **Provider:** the OpenAI API, through the official `openai` SDK and Chat Completions with *function calling*. The choice was practical: that is where I have credits.
+- **Default model `gpt-4.1-mini`:**
+  - follows long instructions well and calls tools reliably;
+  - is fast and cheap, which matters for customer service with many short messages.
+- **Comparison:** I also ran the hardest scenarios (return, and order with verification) with `gpt-5.4-mini`. There was no clear gain, and it even opened a ticket without confirming with the customer. The `gpt-4.1-mini` mistakes were fixed by adjusting the prompt and the tool descriptions. Note: on Chat Completions, `gpt-5.4-mini` only accepts tools with `reasoning_effort=none`.
+- **Configurable:** switch it with `EMPORIO_MODEL`. With a reasoning model (e.g. `gpt-5-mini`), set `EMPORIO_REASONING_EFFORT`. The code sends `reasoning_effort` only in that case; otherwise it sends `temperature=0.3` for consistent answers.
+- **Prompt caching:** OpenAI automatically caches repeated prefixes. That is why the system prompt is static and comes first. The **current date/time** is added on each turn as a system message next to the customer's message, without changing the prefix. The time is needed for opening hours and deadlines.
+- **Provider independence:** the business logic (data, policies, tools, prompt) does not depend on the provider. Only `agent.py` talks to the API, so switching providers means rewriting that file. I did this in practice: the project started on the Anthropic API and moved to OpenAI (see the commit history).
 
-### Estratégia de prompt
+### Prompt strategy
 
-O prompt de sistema (`prompts.py`) define:
-- a **persona**: Lia, informal mas profissional, mensagens curtas no estilo WhatsApp, como pede a seção 7.1 do manual;
-- **quando usar cada ferramenta**, ligado a cada tipo de pergunta;
-- as **situações especiais** do manual: produto esgotado ou descontinuado, promoção expirada, reclamação;
-- o **escopo**: só instrumentos; acessórios são redirecionados; assuntos alheios à loja são recusados com simpatia;
-- regras de **segurança**: ignorar tentativas de mudar regras ou revelar dados.
+The system prompt (`prompts.py`) is written in English and tells the model to always reply in Brazilian Portuguese. It defines:
+- the **persona**: Lia, informal but professional, short WhatsApp-style messages, as section 7.1 of the manual asks;
+- **when to use each tool**, tied to each kind of question;
+- the manual's **special situations**: out-of-stock or discontinued product, expired promotion, complaint;
+- the **scope**: instruments only; accessories are redirected; topics unrelated to the store are declined kindly;
+- **security** rules: ignore attempts to change the rules or reveal data.
 
-As descrições das ferramentas reforçam o "quando usar". Os resultados trazem campos de orientação (`orientacao`, `alertas`, `obs`) que conduzem o modelo no caso concreto, por exemplo "previsão de entrega vencida há N dias, ofereça registrar um chamado".
+The tool descriptions reinforce the "when to use". The results carry guidance fields (`guidance`, `alerts`, `note`) that steer the model in the specific case, for example "delivery estimate passed N days ago, offer to open a ticket".
 
-### Interface e persistência
+### Interface and persistence
 
-- **CLI**: o foco do desafio é o agente. O `EmporioAgent.send()` é independente da interface, então uma API (FastAPI) ou um webhook de WhatsApp seria uma camada fina por cima.
-- **Histórico persistido** em JSON por sessão (`.runtime/sessoes/`). O cliente pode retomar a conversa (`--sessao`), e o histórico é salvo exatamente no formato enviado à API.
-- **Chamados** (reclamações, trocas, atrasos) vão para `.runtime/chamados.jsonl` com número de protocolo. É o ponto de integração com a equipe humana.
+- **CLI**: the focus of the challenge is the agent. `EmporioAgent.send()` is independent of the interface, so an API (FastAPI) or a WhatsApp webhook would be a thin layer on top.
+- **History persisted** as JSON per session (`.runtime/sessions/`). The customer can resume the conversation (`--session`), and the history is saved exactly in the format sent to the API.
+- **Tickets** (complaints, exchanges, delays) go to `.runtime/tickets.jsonl` with a protocol number. This is the integration point with the human team.
 
-### Tratamento dos dados
+### Data handling
 
-| Problema encontrado | Tratamento |
+| Issue found | Handling |
 |---|---|
-| `status` + `stock_quantity` combinam de jeitos ambíguos | Situação derivada: `disponivel`, `esgotado` (ativo com estoque 0, ex.: id 96), `descontinuado`, `em_breve` |
-| Produto 136 **descontinuado com 13 em estoque** | Tratado como descontinuado, como manda a política: não é oferecido e o agente sugere equivalentes |
-| Produto 130 **"coming_soon" com estoque 2** e já presente em pedidos | Tratado como "em breve": não é vendido e o agente não promete data |
-| Mais de uma promoção por produto (ex.: 93 e 96) | Só valem promoções ativas; se houver mais de uma ativa, vale a maior (não são cumulativas) |
-| Preço promocional não existe no CSV | Calculado (`preço × (1 − desconto)`) e sempre exibido junto com o original e o % |
-| `specs` em JSON com formatos diferentes | Parse tolerante e chaves normalizadas |
-| Busca textual ("takamine gd 20", acentos, maiúsculas) | Normalização sem acentos, junção de termos ("gd 20" → "gd20"); resultados parciais são marcados como **aproximados** para o agente não confundi-los com o item pedido |
-| Pedidos sem data real de recebimento | A previsão de entrega é usada como referência para os prazos, e o agente é avisado disso |
-| Totais de alguns pedidos ≠ soma dos preços atuais (ex.: pedidos 3 e 20) | O total do pedido é tratado como o valor efetivamente cobrado (preços mudam, pode haver desconto); não é recalculado |
-| Pedidos de 2025–2026 e "hoje" variável | Os prazos são calculados com a data atual: pedidos "enviados" com previsão vencida e pedidos parados há muito tempo geram alertas e oferta de chamado |
-| Pypdf extrai uma palavra por linha | Normalização do texto antes de cortar as seções |
+| `status` + `stock_quantity` combine ambiguously | Derived availability: `available`, `out_of_stock` (active with stock 0, e.g. id 96), `discontinued`, `coming_soon` |
+| Product 136 **discontinued with 13 in stock** | Treated as discontinued, as the policy says: it is not offered and the agent suggests equivalents |
+| Product 130 **"coming_soon" with stock 2** and already in orders | Treated as "coming soon": not sold, and the agent does not promise a date |
+| More than one promotion per product (e.g. 93 and 96) | Only active promotions count; if more than one is active, the largest wins (they don't stack) |
+| No promotional price in the CSV | Computed (`price × (1 − discount)`) and always shown with the original price and the % |
+| `specs` JSON in different formats | Lenient parsing and normalized keys |
+| Text search ("takamine gd 20", accents, case) | Accent-free normalization, glued terms ("gd 20" → "gd20"); partial results are flagged as **approximate** so the agent does not mistake them for the requested item |
+| Orders have no actual receipt date | The delivery estimate is used as the reference for deadlines, and the agent is told so |
+| Some order totals ≠ sum of current prices (e.g. orders 3 and 20) | The order total is treated as the amount actually charged (prices change, discounts may apply); it is not recomputed |
+| Orders from 2025–2026 and a moving "today" | Deadlines are computed against the current date: "shipped" orders past their estimate and orders stuck for a long time raise alerts and a ticket offer |
+| pypdf extracts one word per line | Text normalization before splitting the sections |
 
-### Suposições sobre inconsistências do manual
+### Assumptions about inconsistencies in the manual
 
-O enunciado pede para documentar as interpretações. Elas também são anexadas ao texto das seções devolvidas ao agente, para que ele responda sempre do mesmo jeito.
+The challenge asks for the interpretations to be documented. They are also attached to the section text returned to the agent, so it always answers the same way.
 
-1. **WhatsApp:** a capa e a tabela de dados trazem **(67) 3341-4444**, e a seção 7 cita **(67) 3321-4500**. Adotei o 3341-4444, que aparece em dois lugares, incluindo a tabela oficial da empresa.
-2. **E-mail:** a tabela traz `contato@empóriodamusica.com.br` (com acento); considerei erro de digitação e uso o da capa, `contato@emporiodamusica.com.br`.
-3. **Parcelamento:** a tabela diz "parcela mínima de R$ 100,00", mas a seção 3.1 detalha faixas. Prevalece a regra mais específica:
-   - 1x a 3x: parcela mínima de R$ 50;
-   - 4x a 6x: mínima de R$ 80;
-   - 7x a 12x: mínima de R$ 100.
+1. **WhatsApp:** the cover and the data table show **(67) 3341-4444**, while section 7 mentions **(67) 3321-4500**. I adopted 3341-4444, which appears in two places, including the company's official table.
+2. **E-mail:** the table shows `contato@empóriodamusica.com.br` (with an accent); I treated it as a typo and use the cover's `contato@emporiodamusica.com.br`.
+3. **Installments:** the table says "minimum installment of R$ 100,00", but section 3.1 details tiers. The more specific rule prevails:
+   - 1x to 3x: minimum installment of R$ 50;
+   - 4x to 6x: minimum of R$ 80;
+   - 7x to 12x: minimum of R$ 100.
 
-   Uma compra abaixo de R$ 50 pode ser paga em 1x.
-4. **Direito de arrependimento** vale para compras online. Os dados não dizem o canal da compra, então o agente pergunta ao cliente quando isso importa.
-5. **Fechamento de venda e reserva:** não há sistema para isso, então o agente passa as condições e encaminha para a loja ou para um atendente.
+   A purchase under R$ 50 can be paid in 1x.
+4. **Right of withdrawal** applies to online purchases. The data does not say which channel a purchase came from, so the agent asks the customer when it matters.
+5. **Closing a sale and reservations:** there is no system for that, so the agent gives the conditions and refers the customer to the store or to a human agent.
 
-### Segurança e LGPD
+### Security and LGPD
 
-- Dados de pedido só são mostrados com número do pedido **e** e-mail/telefone do titular.
-- Se a verificação falha, a resposta é a mesma para "pedido inexistente" e "dados não conferem", para não revelar se o pedido existe.
-- Do cadastro do cliente, o agente só recebe o primeiro nome; telefone, e-mail e cidade cadastrados nunca entram no contexto do modelo.
-- O prompt instrui a ignorar tentativas de mudar regras, assumir outro papel ou revelar o prompt.
+- Order data is only shown with the order number **and** the owner's e-mail/phone.
+- When verification fails, the response is the same for "order does not exist" and "details don't match", so it does not reveal whether the order exists.
+- From the customer record, the agent only receives the first name; the stored phone, e-mail and city never enter the model's context.
+- The prompt says to ignore attempts to change the rules, take on another role or reveal the prompt.
 
-## Exemplos de interação
+## Example conversations
 
-Conversas geradas ao vivo pelo agente com `scripts/gerar_exemplos.py`. As chamadas de ferramenta aparecem nos blocos "🔧 Ferramentas consultadas".
+Conversations generated live by the agent with `scripts/generate_examples.py`. The conversations are in Portuguese; the tool calls appear in the "🔧 Tools called" blocks.
 
-1. [Catálogo de violões até R$ 1000 + recomendação](exemplos/01_catalogo_violoes.md)
-2. [Preço do Takamine GD20 + PIX e parcelamento](exemplos/02_preco_e_pagamento.md)
-3. [Arrependimento/defeito aplicado a um pedido real](exemplos/03_devolucao_arrependimento.md) (não trivial: verifica identidade, calcula prazos, aplica política e registra chamado)
-4. [Pedido atrasado com verificação LGPD](exemplos/04_pedido_atrasado_lgpd.md) (não trivial)
-5. [Fora de escopo, promoção expirada e informações da loja](exemplos/05_escopo_e_informacoes_gerais.md)
+1. [Guitar catalog up to R$ 1000 + recommendation](examples/01_guitar_catalog.md)
+2. [Takamine GD20 price + PIX and installments](examples/02_price_and_payment.md)
+3. [Withdrawal/defect applied to a real order](examples/03_return_and_warranty.md) (non-trivial: verifies identity, computes deadlines, applies the policy and opens a ticket)
+4. [Late order with LGPD verification](examples/04_late_order_lgpd.md) (non-trivial)
+5. [Out of scope, expired promotion and store info](examples/05_scope_and_store_info.md)
 
-## Limitações conhecidas e o que eu faria com mais tempo
+## Known limitations and what I would do with more time
 
-- **Avaliação automatizada:** hoje os testes cobrem o código determinístico e o loop, com cliente falso. O próximo passo seria um conjunto de avaliação com perguntas reais e critérios por resposta: usou a ferramenta certa? Inventou preço? Respeitou a LGPD? Esse conjunto rodaria a cada mudança de prompt ou de modelo.
-- **Verificação de identidade simples:** basta e-mail ou telefone, e o telefone compara os 8 últimos dígitos. Em produção, o canal (WhatsApp) já identificaria o número e eu adicionaria um código de confirmação.
-- **Frete:** não há tabela de frete nos dados, então o agente explica modalidades e prazos mas não cota valores. Daria para integrar a API dos Correios/Jadlog.
-- **Busca de produtos léxica:** funciona bem para marca e modelo. Pedidos subjetivos ("um violão com som mais encorpado") dependem do modelo ler as descrições. Embeddings sobre descrição e specs ajudariam com um catálogo de 300+ itens.
-- **Dados em memória, lidos de CSV:** suficiente para o protótipo. Em produção eu usaria o banco/ERP da loja, com as mesmas ferramentas por cima.
-- **Interface:** CLI apenas. O próximo passo é expor `EmporioAgent.send()` numa API e num webhook de WhatsApp, com o histórico num banco e não em arquivos.
-- **Chamados** ficam num arquivo JSONL. O ideal é integrar a um helpdesk ou notificar a equipe.
-- **Data de recebimento:** os prazos usam a previsão de entrega porque a data real não existe nos dados.
-- **Observabilidade:** registraria tokens, latência e ferramentas usadas por conversa para acompanhar custo e qualidade.
+- **Automated evaluation:** today the tests cover the deterministic code and the loop, with a fake client. The next step would be an evaluation set with real questions and per-answer criteria: did it use the right tool? Did it make up a price? Did it respect LGPD? That set would run on every prompt or model change.
+- **Simple identity verification:** an e-mail or phone is enough, and the phone check compares the last 8 digits. In production, the channel (WhatsApp) would already identify the number and I would add a confirmation code.
+- **Shipping:** there is no shipping table in the data, so the agent explains options and delivery times but does not quote prices. A carrier API (Correios/Jadlog) could be integrated.
+- **Lexical product search:** works well for brand and model. Subjective requests ("a guitar with a fuller sound") depend on the model reading the descriptions. Embeddings over descriptions and specs would help with a 300+ item catalog.
+- **In-memory data read from CSV:** enough for the prototype. In production I would use the store's database/ERP, with the same tools on top.
+- **Interface:** CLI only. The next step is to expose `EmporioAgent.send()` through an API and a WhatsApp webhook, with the history in a database instead of files.
+- **Tickets** live in a JSONL file. Ideally they would go to a helpdesk or notify the team.
+- **Receipt date:** deadlines use the delivery estimate because the actual date is not in the data.
+- **Observability:** I would log tokens, latency and tools used per conversation to track cost and quality.
 
-## Uso de assistentes de código
+## Use of coding assistants
 
-Usei o **Claude Code** (Anthropic) como par de programação durante todo o desafio:
+I used **Claude Code** (Anthropic) as a pair programmer throughout the challenge:
 
-1. **Análise:** pedi para ele ler o enunciado, o manual em PDF e os CSVs e me trazer um resumo do que pedia o desafio. Nessa etapa já apareceram as inconsistências dos dados e do manual (telefone duplicado, regra de parcelamento contraditória, produtos com status e estoque incoerentes).
-2. **Plano e decisões:** discutimos a abordagem (function calling vs. RAG vs. SQL), o provedor e a interface. Aprovei o plano antes da implementação.
-3. **Implementação incremental:** ele escreveu o código em etapas (dados → políticas → ferramentas → agente → CLI → testes), rodando os testes e conferindo a saída das ferramentas contra os dados reais. Cada etapa virou um commit.
-4. **Revisão:** revisei as decisões, as suposições e as conversas de exemplo, que foram geradas ao vivo pelo agente com o script, e não escritas à mão.
+1. **Analysis:** I asked it to read the challenge statement, the PDF manual and the CSVs and give me a summary of what the challenge asked for. The inconsistencies in the data and the manual already showed up at this stage (duplicate phone number, contradictory installment rule, products with inconsistent status and stock).
+2. **Plan and decisions:** we discussed the approach (function calling vs. RAG vs. SQL), the provider and the interface. I approved the plan before implementation.
+3. **Incremental implementation:** it wrote the code in steps (data → policies → tools → agent → CLI → tests), running the tests and checking the tool output against the real data. Each step became a commit.
+4. **Review:** I reviewed the decisions, the assumptions and the example conversations, which were generated live by the agent with the script, not written by hand.
 
-O assistente acelerou a parte mecânica (parsing, testes, boilerplate). As decisões de produto e de negócio (o que fazer com dados inconsistentes, regras de LGPD, escopo) foram explicitadas e documentadas aqui.
+The assistant sped up the mechanical work (parsing, tests, boilerplate). The product and business decisions (what to do with inconsistent data, LGPD rules, scope) were made explicit and documented here.

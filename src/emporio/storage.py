@@ -1,8 +1,8 @@
-"""Persistência simples do histórico de conversa em JSON (uma sessão por arquivo).
+"""Simple JSON persistence of the conversation history (one session per file).
 
-Permite retomar o atendimento de onde parou (ex.: cliente volta mais tarde
-para saber do chamado). O histórico é salvo exatamente como enviado à API,
-incluindo blocos de ferramenta, para ser reenviado sem alterações.
+Lets a conversation be resumed where it stopped (e.g. the customer comes back
+later to ask about a ticket). The history is saved exactly as sent to the API,
+tool messages included, so it can be resent unchanged.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from . import config
 
 def _path(session_id: str) -> Path:
     if not re.fullmatch(r"[\w-]{1,64}", session_id):
-        raise ValueError("ID de sessão inválido (use letras, números, _ ou -).")
+        raise ValueError("Invalid session ID (use letters, digits, _ or -).")
     return config.SESSIONS_DIR / f"{session_id}.json"
 
 
@@ -49,12 +49,12 @@ def save(session_id: str, messages: list[dict]) -> Path:
 
 
 def visible_turns(messages: list[dict]) -> list[tuple[str, str]]:
-    """Extrai só as falas (cliente/Lia) do histórico, para reexibir ao retomar."""
+    """Extracts only the spoken turns (customer/Lia) from the history, to replay on resume."""
     turns = []
     for m in messages:
         content = m.get("content") or ""
         if m["role"] == "user":
-            turns.append(("cliente", content))
+            turns.append(("customer", content))
         elif m["role"] == "assistant" and not m.get("tool_calls") and content.strip():
             turns.append(("lia", content.strip()))
     return turns

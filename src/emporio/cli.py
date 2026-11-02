@@ -1,9 +1,9 @@
-"""Interface de linha de comando para conversar com a Lia.
+"""Command-line interface to chat with Lia.
 
-Uso:
-    python -m emporio.cli                 # nova conversa
-    python -m emporio.cli --sessao ID     # retoma (ou cria) a sessão ID
-    python -m emporio.cli --debug         # mostra as ferramentas chamadas
+Usage:
+    python -m emporio.cli                  # new conversation
+    python -m emporio.cli --session ID     # resume (or create) session ID
+    python -m emporio.cli --debug          # show the tool calls
 """
 
 from __future__ import annotations
@@ -22,74 +22,74 @@ BOLD, DIM, CYAN, RESET = "\033[1m", "\033[2m", "\033[36m", "\033[0m"
 if not sys.stdout.isatty():
     BOLD = DIM = CYAN = RESET = ""
 
-HELP = "Comandos: /nova (nova conversa), /debug (liga/desliga ferramentas), /sair"
+HELP = "Commands: /new (new conversation), /debug (toggle tool output), /quit"
 
 
 def print_reply(reply: AgentReply, debug: bool) -> None:
     if debug:
         for call in reply.tool_calls:
             args = json.dumps(call.input, ensure_ascii=False)
-            flag = " [erro]" if call.is_error else ""
+            flag = " [error]" if call.is_error else ""
             print(f"{DIM}  ↳ {call.name}({args}){flag}\n    {call.output[:400]}{RESET}")
     print(f"{CYAN}{BOLD}Lia:{RESET} {reply.text}\n")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Atendimento Empório da Música (CLI)")
-    parser.add_argument("--sessao", help="ID da sessão para retomar/salvar a conversa")
-    parser.add_argument("--debug", action="store_true", help="mostra as chamadas de ferramenta")
+    parser = argparse.ArgumentParser(description="Empório da Música customer service (CLI)")
+    parser.add_argument("--session", help="session ID to resume/save the conversation")
+    parser.add_argument("--debug", action="store_true", help="show the tool calls")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING)
 
-    session_id = args.sessao or storage.new_session_id()
+    session_id = args.session or storage.new_session_id()
     messages = storage.load(session_id)
     agent = EmporioAgent(messages=messages)
     debug = args.debug
 
-    print(f"{BOLD}🎸 Empório da Música — atendimento virtual{RESET}")
-    print(f"{DIM}Sessão: {session_id} · modelo: {config.MODEL} · {HELP}{RESET}\n")
+    print(f"{BOLD}🎸 Empório da Música — virtual assistant{RESET}")
+    print(f"{DIM}Session: {session_id} · model: {config.MODEL} · {HELP}{RESET}\n")
     for who, text in storage.visible_turns(messages):
-        label = "Você" if who == "cliente" else "Lia"
+        label = "You" if who == "customer" else "Lia"
         print(f"{DIM}{label}: {text}{RESET}\n")
 
     while True:
         try:
-            user_text = input(f"{BOLD}Você:{RESET} ").strip()
+            user_text = input(f"{BOLD}You:{RESET} ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
         if not user_text:
             continue
-        if user_text == "/sair":
+        if user_text == "/quit":
             break
         if user_text == "/debug":
             debug = not debug
-            print(f"{DIM}debug {'ligado' if debug else 'desligado'}{RESET}\n")
+            print(f"{DIM}debug {'on' if debug else 'off'}{RESET}\n")
             continue
-        if user_text == "/nova":
+        if user_text == "/new":
             session_id = storage.new_session_id()
             agent = EmporioAgent(client=agent.client, toolbox=agent.toolbox)
-            print(f"{DIM}Nova sessão: {session_id}{RESET}\n")
+            print(f"{DIM}New session: {session_id}{RESET}\n")
             continue
 
         try:
             reply = agent.send(user_text)
         except openai.AuthenticationError:
-            print("Erro: chave da API inválida ou ausente. Configure OPENAI_API_KEY no .env.")
+            print("Error: missing or invalid API key. Set OPENAI_API_KEY in .env.")
             return 1
         except openai.RateLimitError:
-            print(f"{DIM}Muitas requisições agora; aguarde alguns segundos e tente de novo.{RESET}\n")
+            print(f"{DIM}Too many requests right now; wait a few seconds and try again.{RESET}\n")
             continue
         except openai.APIConnectionError:
-            print(f"{DIM}Sem conexão com a API. Verifique a internet e tente de novo.{RESET}\n")
+            print(f"{DIM}Could not reach the API. Check your connection and try again.{RESET}\n")
             continue
         except openai.APIStatusError as e:
-            print(f"{DIM}Erro da API ({e.status_code}): {e.message}{RESET}\n")
+            print(f"{DIM}API error ({e.status_code}): {e.message}{RESET}\n")
             continue
         storage.save(session_id, agent.messages)
         print_reply(reply, debug)
 
-    print(f"{DIM}Conversa salva. Para retomar: python -m emporio.cli --sessao {session_id}{RESET}")
+    print(f"{DIM}Conversation saved. To resume: python -m emporio.cli --session {session_id}{RESET}")
     return 0
 
 

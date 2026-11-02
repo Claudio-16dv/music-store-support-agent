@@ -1,10 +1,10 @@
-"""Leitura do manual de políticas (PDF) e recuperação por seção.
+"""Reading the policy manual (PDF) and retrieving it by section.
 
-O manual tem 8 páginas e 10 seções bem delimitadas. Em vez de embeddings +
-banco vetorial, o PDF é dividido nas suas próprias seções numeradas e o
-modelo escolhe quais seções consultar (roteamento por tópico via tool
-calling). Para um documento desse tamanho isso é mais preciso, determinístico
-e barato que busca vetorial — ver README.
+The manual has 8 pages and 10 well-delimited sections. Instead of embeddings +
+a vector store, the PDF is split along its own numbered sections and the
+model picks which sections to read (topic routing via tool calling). For a
+document this size that is more accurate, deterministic and cheaper than
+vector search — see the README.
 """
 
 from __future__ import annotations
@@ -18,37 +18,37 @@ from pypdf import PdfReader
 
 from . import config
 
-# Seção numerada do manual -> chave de tópico usada pela ferramenta.
+# Numbered manual section -> topic key used by the tool.
 SECTION_KEYS = {
-    1: "sobre_a_loja",
-    2: "horario_funcionamento",
-    3: "formas_pagamento",
-    4: "trocas_devolucoes",
-    5: "frete_entregas",
-    6: "promocoes",
-    7: "diretrizes_atendimento",
-    8: "garantia",
-    9: "privacidade_dados",
-    10: "disposicoes_finais",
+    1: "about_the_store",
+    2: "opening_hours",
+    3: "payment_methods",
+    4: "returns_and_exchanges",
+    5: "shipping_and_delivery",
+    6: "promotions",
+    7: "customer_service_guidelines",
+    8: "warranty",
+    9: "data_privacy",
+    10: "final_provisions",
 }
 
-# O manual tem inconsistências internas. As interpretações adotadas ficam
-# anexadas à seção correspondente, para o agente sempre respondê-las igual.
+# The manual contradicts itself in a few places. The interpretations adopted
+# are attached to the matching section so the agent always answers the same way.
 INTERPRETATION_NOTES = {
-    "sobre_a_loja": (
-        "Contato oficial: telefone/WhatsApp (67) 3341-4444 e e-mail "
-        "contato@emporiodamusica.com.br (sem acento — o acento na tabela é erro de "
-        "digitação; a capa traz o endereço correto). O número (67) 3321-4500 citado na "
-        "seção 7 diverge da capa e da tabela de dados da empresa; usamos (67) 3341-4444."
+    "about_the_store": (
+        "Official contact: phone/WhatsApp (67) 3341-4444 and e-mail "
+        "contato@emporiodamusica.com.br (no accent — the accent in the table is a typo; "
+        "the cover has the correct address). The number (67) 3321-4500 mentioned in "
+        "section 7 contradicts the cover and the company data table; use (67) 3341-4444."
     ),
-    "formas_pagamento": (
-        "A tabela diz 'parcela mínima de R$ 100,00' para crédito, mas a seção 3.1 detalha "
-        "as faixas. Prevalece a regra mais específica (3.1): 1x a 3x com parcela mínima de "
-        "R$ 50,00; 4x a 6x com mínima de R$ 80,00; 7x a 12x com mínima de R$ 100,00. "
-        "Use a ferramenta simular_pagamento para calcular as opções de um valor."
+    "payment_methods": (
+        "The table says 'parcela mínima de R$ 100,00' (minimum installment) for credit, but "
+        "section 3.1 details tiers. The more specific rule (3.1) prevails: 1x to 3x with a "
+        "minimum installment of R$ 50,00; 4x to 6x with a minimum of R$ 80,00; 7x to 12x with "
+        "a minimum of R$ 100,00. Use the simulate_payment tool to compute the options for an amount."
     ),
-    "diretrizes_atendimento": (
-        "O WhatsApp oficial considerado é (67) 3341-4444 (ver sobre_a_loja)."
+    "customer_service_guidelines": (
+        "The official WhatsApp number is (67) 3341-4444 (see about_the_store)."
     ),
 }
 
@@ -62,7 +62,7 @@ class PolicySection:
 
 
 def _clean_page(text: str) -> str:
-    # pypdf devolve uma palavra por linha neste PDF; juntamos tudo em texto corrido.
+    # pypdf returns one word per line for this PDF; join everything into running text.
     text = re.sub(r"\s*\n\s*", " ", text)
     text = re.sub(r"(\d)\s+-\s*(\d)", r"\1-\2", text)  # "3341 - 4444" -> "3341-4444"
     text = text.replace("​", "")
@@ -72,17 +72,17 @@ def _clean_page(text: str) -> str:
 
 
 def _split_sections(full_text: str) -> list[PolicySection]:
-    """Corta o texto nos títulos de seção conhecidos ("N. Título"), em ordem.
+    """Cuts the text at the known section titles ("N. Title"), in order.
 
-    Buscar os títulos em sequência evita confundir subseções ("3.1") ou listas
-    numeradas dentro de uma seção ("1. Saudação") com títulos de seção.
+    Looking the titles up in sequence avoids mistaking subsections ("3.1") or
+    numbered lists inside a section ("1. Saudação") for section titles.
     """
     starts: list[int] = []
     pos = 0
     for n, title in _TITLES.items():
         idx = full_text.find(f"{n}. {title}", pos)
         if idx < 0:
-            raise ValueError(f"Seção '{n}. {title}' não encontrada no manual de políticas")
+            raise ValueError(f"Section '{n}. {title}' not found in the policy manual")
         starts.append(idx)
         pos = idx + 1
     starts.append(len(full_text))
@@ -93,6 +93,7 @@ def _split_sections(full_text: str) -> list[PolicySection]:
     ]
 
 
+# Section titles exactly as they appear in the (Portuguese) manual.
 _TITLES = {
     1: "Sobre a Empório da Música",
     2: "Horário de Funcionamento",
@@ -114,26 +115,26 @@ def load_policies(pdf_path: Path = config.POLICIES_PDF) -> dict[str, PolicySecti
     cover, body = pages[0], " ".join(pages[1:])
     sections = _split_sections(body)
     result = {s.key: s for s in sections}
-    # A capa traz endereço/telefone/e-mail: anexamos à seção "sobre a loja".
-    about = result["sobre_a_loja"]
-    result["sobre_a_loja"] = PolicySection(
-        about.number, about.key, about.title, f"{about.text} Capa do manual: {cover}"
+    # The cover has the address/phone/e-mail: attach it to the "about the store" section.
+    about = result["about_the_store"]
+    result["about_the_store"] = PolicySection(
+        about.number, about.key, about.title, f"{about.text} Manual cover: {cover}"
     )
     return result
 
 
 def get_sections(keys: list[str]) -> str:
     policies = load_policies()
-    if "todas" in keys:
+    if "all" in keys:
         keys = list(SECTION_KEYS.values())
     parts = []
-    for key in dict.fromkeys(keys):  # remove duplicadas preservando ordem
+    for key in dict.fromkeys(keys):  # dedupe, keeping order
         section = policies.get(key)
         if section is None:
-            parts.append(f"[{key}] tópico inexistente. Tópicos válidos: {', '.join(SECTION_KEYS.values())}")
+            parts.append(f"[{key}] unknown topic. Valid topics: {', '.join(SECTION_KEYS.values())}")
             continue
         text = f"## {section.number}. {section.title}\n{section.text}"
         if key in INTERPRETATION_NOTES:
-            text += f"\n[Nota de interpretação interna] {INTERPRETATION_NOTES[key]}"
+            text += f"\n[Internal interpretation note] {INTERPRETATION_NOTES[key]}"
         parts.append(text)
     return "\n\n".join(parts)

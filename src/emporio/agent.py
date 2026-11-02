@@ -1,8 +1,8 @@
-"""Loop do agente: modelo da OpenAI (Chat Completions) + function calling.
+"""Agent loop: OpenAI model (Chat Completions) + function calling.
 
-Usamos um loop manual para ter controle explícito de: limite de rodadas de
-ferramenta, registro das chamadas (debug e geração dos exemplos), tratamento
-de finish_reason e persistência do histórico.
+A manual loop gives explicit control over: the tool-round limit, recording
+the calls (debug mode and example generation), finish_reason handling and
+history persistence.
 """
 
 from __future__ import annotations
@@ -22,8 +22,9 @@ from .tools import ToolError, Toolbox
 
 log = logging.getLogger(__name__)
 
-WEEKDAYS = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
+WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
+# Shown to the customer, so it stays in Portuguese.
 FALLBACK_ERROR_REPLY = (
     "Poxa, tive um probleminha aqui pra concluir sua solicitação. 😕 Pode tentar de novo? "
     "Se preferir, fale com a nossa equipe pelo WhatsApp (67) 3341-4444."
@@ -47,11 +48,11 @@ class AgentReply:
 
 def now_text(now: datetime | None = None) -> str:
     now = now or datetime.now(config.TIMEZONE)
-    return f"{WEEKDAYS[now.weekday()]}, {now:%d/%m/%Y %H:%M}"
+    return f"{WEEKDAYS[now.weekday()]}, {now:%Y-%m-%d %H:%M}"
 
 
 def _assistant_param(message: Any) -> dict:
-    """Converte a mensagem de resposta do SDK em dict serializável (reenvio e histórico)."""
+    """Turns the SDK response message into a serializable dict (resending and history)."""
     param: dict[str, Any] = {"role": "assistant", "content": message.content}
     if message.tool_calls:
         param["tool_calls"] = [
@@ -76,7 +77,7 @@ class EmporioAgent:
     ):
         self.client = client or openai.OpenAI()
         self.toolbox = toolbox or Toolbox(store or StoreData())
-        # Histórico sem o prompt de sistema (ele é prefixado a cada requisição).
+        # History without the system prompt (it is prepended to every request).
         self.messages: list[dict] = messages if messages is not None else []
         self.clock = clock or (lambda: datetime.now(config.TIMEZONE))
         self._tools = [
@@ -94,8 +95,8 @@ class EmporioAgent:
     def _request_kwargs(self) -> dict:
         kwargs: dict[str, Any] = {
             "model": config.MODEL,
-            # Prompt de sistema fixo no início: a OpenAI faz cache automático do
-            # prefixo repetido (ferramentas + sistema + histórico) entre turnos.
+            # Fixed system prompt first: OpenAI automatically caches the repeated
+            # prefix (tools + system + history) across turns.
             "messages": [{"role": "system", "content": SYSTEM_PROMPT}, *self.messages],
             "tools": self._tools,
             "max_completion_tokens": config.MAX_TOKENS,
@@ -103,7 +104,7 @@ class EmporioAgent:
         if config.REASONING_EFFORT:
             kwargs["reasoning_effort"] = config.REASONING_EFFORT
         else:
-            # Modelos sem raciocínio: temperatura baixa para respostas consistentes.
+            # Non-reasoning models: low temperature for consistent answers.
             kwargs["temperature"] = 0.3
         return kwargs
 
@@ -113,24 +114,24 @@ class EmporioAgent:
         try:
             args = json.loads(tool_call.function.arguments or "{}")
             if not isinstance(args, dict):
-                raise ToolError("Argumentos devem ser um objeto JSON.")
+                raise ToolError("Arguments must be a JSON object.")
             output = self.toolbox.run(name, args)
             is_error = False
         except json.JSONDecodeError:
-            output, is_error = "Erro: argumentos não são JSON válido.", True
+            output, is_error = "Error: arguments are not valid JSON.", True
         except ToolError as e:
-            output, is_error = f"Erro: {e}", True
-        except Exception:  # bug na ferramenta: não derruba a conversa
-            log.exception("Falha ao executar ferramenta %s", name)
-            output, is_error = "Erro interno ao consultar o sistema. Não invente a informação.", True
+            output, is_error = f"Error: {e}", True
+        except Exception:  # bug in a tool: don't kill the conversation
+            log.exception("Tool %s failed", name)
+            output, is_error = "Internal error while querying the system. Do not make up the information.", True
         result = {"role": "tool", "tool_call_id": tool_call.id, "content": output}
         return result, ToolCall(name, args, output, is_error)
 
     def send(self, user_text: str) -> AgentReply:
         checkpoint = len(self.messages)
         self.messages.append({"role": "user", "content": user_text})
-        # A hora vai numa mensagem de sistema junto do turno, e não no prompt de
-        # sistema, para não invalidar o cache do prefixo.
+        # The time goes in a system message next to the turn, not in the system
+        # prompt, so the cached prefix is not invalidated.
         self.messages.append({"role": "system", "content": current_time_note(now_text(self.clock()))})
 
         calls: list[ToolCall] = []
@@ -153,11 +154,11 @@ class EmporioAgent:
                     return AgentReply(FALLBACK_ERROR_REPLY, calls, "content_filter")
                 text = (message.content or "").strip()
                 if choice.finish_reason == "length":
-                    text += "\n\n(Resposta interrompida por limite de tamanho.)"
+                    text += "\n\n(Resposta interrompida por limite de tamanho.)"  # customer-facing
                 return AgentReply(text or FALLBACK_ERROR_REPLY, calls, choice.finish_reason)
 
             return AgentReply(FALLBACK_ERROR_REPLY, calls, "max_tool_rounds")
         except openai.APIError:
-            # Desfaz o turno incompleto para o histórico continuar válido.
+            # Roll back the incomplete turn so the history stays valid.
             del self.messages[checkpoint:]
             raise

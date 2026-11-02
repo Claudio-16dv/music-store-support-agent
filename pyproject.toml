@@ -1,7 +1,7 @@
 [project]
-name = "emporio-agente"
+name = "music-store-support-agent"
 version = "0.1.0"
-description = "Agente de atendimento da Empório da Música (desafio técnico AI Engineer)"
+description = "Customer service agent for Empório da Música (AI Engineer technical challenge)"
 requires-python = ">=3.11"
 dependencies = ["openai>=3,<4", "pypdf>=6,<7", "python-dotenv>=1,<2"]
 
