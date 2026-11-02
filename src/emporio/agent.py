@@ -10,9 +10,10 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
+import holidays
 import openai
 
 from . import config
@@ -46,9 +47,22 @@ class AgentReply:
     stop_reason: str | None = None
 
 
+# National + Mato Grosso do Sul holidays, plus Campo Grande's municipal holiday
+# (city anniversary). The manual says the store is closed on holidays.
+_HOLIDAYS = holidays.Brazil(subdiv="MS")
+CITY_HOLIDAYS = {(8, 26): "Campo Grande anniversary"}
+
+
+def holiday_name(day: date) -> str | None:
+    return CITY_HOLIDAYS.get((day.month, day.day)) or _HOLIDAYS.get(day)
+
+
 def now_text(now: datetime | None = None) -> str:
     now = now or datetime.now(config.TIMEZONE)
-    return f"{WEEKDAYS[now.weekday()]}, {now:%Y-%m-%d %H:%M}"
+    text = f"{WEEKDAYS[now.weekday()]}, {now:%Y-%m-%d %H:%M}"
+    if name := holiday_name(now.date()):
+        text += f" — public holiday ({name}): the store is closed all day today"
+    return text
 
 
 def _assistant_param(message: Any) -> dict:

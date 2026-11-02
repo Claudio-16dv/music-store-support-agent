@@ -10,7 +10,7 @@ import pytest
 from openai.types.chat import ChatCompletion
 
 from emporio import config, storage
-from emporio.agent import EmporioAgent
+from emporio.agent import EmporioAgent, now_text
 
 
 class FakeCompletions:
@@ -145,3 +145,9 @@ def test_history_persists_and_replays(agent_factory, tmp_path, monkeypatch):
     assert storage.visible_turns(restored) == [("customer", "oi"), ("lia", "Olá!")]
     with pytest.raises(ValueError):
         storage.save("../outside", [])
+
+
+def test_time_note_flags_holidays():
+    assert "public holiday" in now_text(datetime(2026, 11, 2, 10, 0))  # Finados
+    assert "public holiday" in now_text(datetime(2026, 8, 26, 10, 0))  # Campo Grande anniversary
+    assert "public holiday" not in now_text(datetime(2026, 3, 25, 10, 0))
