@@ -11,7 +11,6 @@ catalog data and policy text stay in Portuguese, as in the source files.
 from __future__ import annotations
 
 import json
-import math
 import uuid
 from datetime import date, datetime, timedelta
 from typing import Any, Callable
@@ -31,6 +30,7 @@ from .data import (
 from .policies import SECTION_KEYS, get_sections
 
 WITHDRAWAL_DAYS = 7  # right of withdrawal (arrependimento)
+PREFERENCE_EXCHANGE_DAYS = 7  # exchange for another color/model/size (§4.3)
 DEFECT_EXCHANGE_DAYS = 30
 LEGAL_WARRANTY_DAYS = 90
 PIX_DISCOUNT = 0.05
@@ -134,7 +134,8 @@ class Toolbox:
                 "name": "list_active_promotions",
                 "description": (
                     "Lists the promotions running now, with original price, discount and promotional "
-                    "price. Also use it to check whether a promotion the customer mentioned still applies."
+                    "price. For a specific product, use search_products instead: it also returns the "
+                    "promotions that have ended and the current price."
                 ),
                 "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
             },
@@ -268,7 +269,7 @@ class Toolbox:
         limit = max(1, min(int(limit or 15), 20))
         result: dict[str, Any] = {
             "total_found": len(found),
-            "products": [_product_summary(p) for p in found[:limit]],
+            "products": [self._summary_with_ended_promotions(p) for p in found[:limit]],
         }
         if only_unavailable:
             result["note"] = (
@@ -292,11 +293,19 @@ class Toolbox:
             )
         return result
 
+    def _summary_with_ended_promotions(self, p: Product) -> dict:
+        """Product summary plus promotions that have ended, so Lia can say so when asked."""
+        item = _product_summary(p)
+        expired = self.store.inactive_promotions_for(p.id)
+        if expired and not p.active_promotion:
+            item["ended_promotions"] = sorted({pr.description for pr in expired})
+        return item
+
     def product_details(self, product_id: int) -> dict:
         p = self.store.products.get(int(product_id))
         if p is None:
             raise ToolError(f"Product {product_id} does not exist in the catalog.")
-        result = _product_summary(p)
+        result = self._summary_with_ended_promotions(p)
         if p.description_conflict:
             result["data_note"] = (
                 "The catalog description of this product names another brand/model (data error), "
@@ -313,9 +322,6 @@ class Toolbox:
         if guidance:
             result["guidance"] = guidance
             result["available_alternatives"] = [_product_summary(a) for a in self.store.similar_available(p)]
-        expired = self.store.inactive_promotions_for(p.id)
-        if expired and not p.active_promotion:
-            result["ended_promotions"] = sorted({pr.description for pr in expired})
         return result
 
     def list_active_promotions(self) -> dict:
@@ -393,6 +399,7 @@ class Toolbox:
             result["deadlines"] = {
                 "receipt_reference": f"{received.isoformat()} (delivery estimate; the actual receipt date is not in the system)",
                 "withdrawal_7_days_after_receipt": "within the deadline" if days_since_receipt <= WITHDRAWAL_DAYS else f"expired ({days_since_receipt} days since receipt)",
+                "preference_exchange_7_days_after_receipt": "within the deadline (subject to availability of the desired product)" if days_since_receipt <= PREFERENCE_EXCHANGE_DAYS else f"expired ({days_since_receipt} days since receipt)",
                 "defect_exchange_30_days_after_purchase": "within the deadline" if days_since_purchase <= DEFECT_EXCHANGE_DAYS else f"expired ({days_since_purchase} days since purchase)",
                 # §4.2 sends defects to the manufacturer after 30 days, but §8.1 (CDC) gives a
                 # 90-day legal warranty from receipt: within it, the store handles the defect.
@@ -435,7 +442,7 @@ class Toolbox:
                 else f"{brl(amount * (1 - PIX_DISCOUNT))} (5% discount)"
             ),
             "debit_or_boleto": f"{brl(amount)} upfront (boleto clears in up to 3 business days)",
-            "interest_free_credit": f"up to {max_installments}x of {brl(math.floor(amount / max_installments * 100) / 100)}",
+            "interest_free_credit": f"up to {max_installments}x of {brl(round(amount / max_installments, 2))}",
             "possible_installments": options,
             "can_combine_payment_methods": amount > SPLIT_PAYMENT_MINIMUM,
         }

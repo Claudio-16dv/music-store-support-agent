@@ -53,6 +53,11 @@ INTERPRETATION_NOTES = {
         "within those 90 days the store handles manufacturing defects (open a ticket for the team); "
         "after that, the manufacturer's warranty applies and the store can mediate."
     ),
+    "shipping_and_delivery": (
+        "The manual covers orders 'acima de R$ 500,00' (free shipping) and 'abaixo de R$ 500,00' "
+        "(R$ 35,00) in the Campo Grande metropolitan area, but not exactly R$ 500,00. "
+        "Interpretation: an order of exactly R$ 500,00 gets free shipping (the customer-friendly reading)."
+    ),
     "customer_service_guidelines": (
         "The official WhatsApp number is (67) 3341-4444 (see about_the_store)."
     ),

@@ -43,6 +43,7 @@ def test_delivered_order_computes_deadlines(toolbox):
     r = run(toolbox, "lookup_order", order_number=7, email_or_phone=_email(toolbox, 7))
     assert r["status"] == "delivered"
     assert r["deadlines"]["withdrawal_7_days_after_receipt"].startswith("expired")
+    assert r["deadlines"]["preference_exchange_7_days_after_receipt"].startswith("expired")
     assert r["deadlines"]["defect_exchange_30_days_after_purchase"].startswith("expired")
     assert r["deadlines"]["legal_warranty_90_days_after_receipt"].startswith("active until 2026-05-18")
 
@@ -121,3 +122,13 @@ def test_shared_email_requires_phone(toolbox):
 def test_ticket_requires_a_real_contact(toolbox, contact):
     with pytest.raises(ToolError):
         toolbox.run("create_ticket", {"type": "talk_to_agent", "summary": "x", "contact": contact})
+
+
+def test_search_shows_ended_promotions(toolbox):
+    r = run(toolbox, "search_products", query="Crafter CE-15")
+    assert r["products"][0]["ended_promotions"] == ["Black Friday"]
+
+
+def test_installment_value_is_rounded_not_truncated(toolbox):
+    r = run(toolbox, "simulate_payment", amount=2000, is_promotional_price=False)
+    assert r["interest_free_credit"] == "up to 12x of R$ 166,67"
