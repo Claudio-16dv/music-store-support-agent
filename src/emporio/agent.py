@@ -165,12 +165,19 @@ class EmporioAgent:
                     continue
 
                 if choice.finish_reason == "content_filter":
-                    return AgentReply(FALLBACK_ERROR_REPLY, calls, "content_filter")
-                text = (message.content or "").strip()
-                if choice.finish_reason == "length":
-                    text += "\n\n(Resposta interrompida por limite de tamanho.)"  # customer-facing
-                return AgentReply(text or FALLBACK_ERROR_REPLY, calls, choice.finish_reason)
+                    text = FALLBACK_ERROR_REPLY
+                else:
+                    text = (message.content or "").strip()
+                    if choice.finish_reason == "length":
+                        text += "\n\n(Resposta interrompida por limite de tamanho.)"  # customer-facing
+                    text = text or FALLBACK_ERROR_REPLY
+                # Store what the customer actually saw: an assistant message with no content
+                # and no tool calls would make every later request in the session fail.
+                self.messages[-1]["content"] = text
+                return AgentReply(text, calls, choice.finish_reason)
 
+            # Close the turn with an assistant message so the saved history stays coherent.
+            self.messages.append({"role": "assistant", "content": FALLBACK_ERROR_REPLY})
             return AgentReply(FALLBACK_ERROR_REPLY, calls, "max_tool_rounds")
         except openai.APIError:
             # Roll back the incomplete turn so the history stays valid.

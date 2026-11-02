@@ -10,7 +10,7 @@ import pytest
 from openai.types.chat import ChatCompletion
 
 from emporio import config, storage
-from emporio.agent import EmporioAgent, now_text
+from emporio.agent import FALLBACK_ERROR_REPLY, EmporioAgent, now_text
 
 
 class FakeCompletions:
@@ -151,3 +151,18 @@ def test_time_note_flags_holidays():
     assert "public holiday" in now_text(datetime(2026, 11, 2, 10, 0))  # Finados
     assert "public holiday" in now_text(datetime(2026, 8, 26, 10, 0))  # Campo Grande anniversary
     assert "public holiday" not in now_text(datetime(2026, 3, 25, 10, 0))
+
+
+@pytest.mark.parametrize("finish", ["stop", "content_filter"])
+def test_empty_or_filtered_reply_keeps_history_valid(agent_factory, finish):
+    agent, _ = agent_factory([resp(None, finish=finish)])
+    reply = agent.send("oi")
+    assert reply.text == FALLBACK_ERROR_REPLY
+    assert agent.messages[-1] == {"role": "assistant", "content": FALLBACK_ERROR_REPLY}
+
+
+def test_tool_round_limit_closes_turn(agent_factory, monkeypatch):
+    monkeypatch.setattr(config, "MAX_TOOL_ROUNDS", 0)
+    agent, _ = agent_factory([resp(tool_calls=[tool("list_active_promotions", {})])])
+    agent.send("promo?")
+    assert agent.messages[-1] == {"role": "assistant", "content": FALLBACK_ERROR_REPLY}

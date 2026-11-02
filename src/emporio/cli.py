@@ -43,7 +43,11 @@ def main(argv: list[str] | None = None) -> int:
 
     session_id = args.session or storage.new_session_id()
     messages = storage.load(session_id)
-    agent = EmporioAgent(messages=messages)
+    try:
+        agent = EmporioAgent(messages=messages)
+    except openai.OpenAIError:  # raised by the client when no API key is configured
+        print("Error: OPENAI_API_KEY is not set. Copy .env.example to .env and fill it in.")
+        return 1
     debug = args.debug
 
     print(f"{BOLD}🎸 Empório da Música — virtual assistant{RESET}")
